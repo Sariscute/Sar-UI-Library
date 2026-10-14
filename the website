@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SAR UI Builder</title>
+<link href="https://fonts.googleapis.com/css2?family=Ubuntu:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f6f6f8;--pn:#fff;--ln:#dcdce2;--tx:#1d1d22;--mu:#6b6b76;--ac:#d6563e;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121214;--pn:#1b1b1f;--ln:#2e2e34;--tx:#e6e6ea;--mu:#8c8c96}}
+:root[data-theme="dark"]{--bg:#121214;--pn:#1b1b1f;--ln:#2e2e34;--tx:#e6e6ea;--mu:#8c8c96}
+html{scroll-padding-top:env(safe-area-inset-top,0px);scroll-behavior:smooth}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.45 Ubuntu,system-ui,sans-serif}
+a{color:inherit}
+.nav{display:flex;align-items:center;gap:14px;max-width:1400px;margin:0 auto;padding:14px}
+.nav b{font-size:18px}.nav span{color:var(--mu);font-size:13px;border:1px solid var(--ln);border-radius:4px;padding:1px 7px}
+.nav a{margin-left:auto;color:var(--mu);text-decoration:none}
+.hero{max-width:1400px;margin:0 auto;padding:36px 14px 26px}
+.hero h1{font-size:clamp(28px,5vw,44px);margin:0 0 8px;line-height:1.1}
+.hero p{color:var(--mu);margin:0 0 18px;max-width:520px}
+.b{font:inherit;color:inherit;background:var(--pn);border:1px solid var(--ln);border-radius:5px;padding:6px 12px;cursor:pointer;text-decoration:none;display:inline-block}
+.b.p{background:var(--ac);border-color:var(--ac);color:#fff}.b.d{color:#d6453e}
+.grid{display:grid;grid-template-columns:240px minmax(0,1fr) 320px;gap:14px;max-width:1400px;margin:0 auto;padding:0 14px 40px;align-items:start}
+.pn{background:var(--pn);border:1px solid var(--ln);border-radius:6px;padding:12px}
+h3{margin:4px 0 8px;font-size:13px;color:var(--mu);font-weight:500;text-transform:none}
+label{display:block;font-size:13px;color:var(--mu)}
+label.ck{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+input,select,textarea{width:100%;font:inherit;font-size:14px;color:var(--tx);background:var(--bg);border:1px solid var(--ln);border-radius:4px;padding:6px 8px;margin:3px 0 8px}
+input[type=checkbox]{width:auto;margin:0}input[type=color]{height:32px;padding:2px}
+textarea{font-family:ui-monospace,Consolas,monospace;font-size:12px}
+.row{display:flex;gap:6px;flex-wrap:wrap}.mu{color:var(--mu)}
+.adds{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+#out{height:300px;white-space:pre;overflow:auto;margin:6px 0}
+#pv{background:var(--b);color:var(--t);border:1px solid var(--o);border-radius:6px;overflow:hidden;font-size:14px}
+#pv .top{display:flex;gap:8px;align-items:center;padding:0 12px;height:42px;background:var(--e);border-bottom:1px solid var(--o)}
+#pv .logo{background:var(--a);color:#fff;border-radius:4px;width:22px;height:22px;display:grid;place-items:center;font-weight:700}
+#pv .pl{background:var(--b);color:var(--s);border-radius:4px;padding:0 7px;font-size:12px}
+#pv .body{display:grid;grid-template-columns:130px minmax(0,1fr) 150px;min-height:360px}
+#pv .rail{padding:8px;border-right:1px solid var(--o);display:flex;flex-direction:column;gap:4px;background:var(--e)}
+#pv .rail.r{border:0;border-left:1px solid var(--o)}
+#pv .ti{padding:8px 10px;border-radius:5px;cursor:pointer;color:var(--s)}
+#pv .ti.on{background:var(--b);color:var(--t);box-shadow:inset 3px 0 var(--a)}
+#pv .cbar{display:flex;gap:4px;padding:6px 8px;border-bottom:1px solid var(--o);overflow-x:auto}
+#pv .ch{padding:5px 10px;border-radius:4px;cursor:pointer;color:var(--s);white-space:nowrap}
+#pv .ch.on{background:var(--e);color:var(--t);box-shadow:inset 0 -2px var(--a)}
+#pv .pg{padding:12px;display:flex;flex-direction:column;gap:8px;min-height:270px;max-height:480px;overflow-y:auto}
+#pv .cd{background:var(--e);border:1px solid var(--o);border-radius:5px;padding:10px 12px;cursor:pointer}
+#pv .cd.sel{border-color:var(--a)}
+#pv .hd{display:flex;justify-content:space-between;align-items:center;gap:8px}
+#pv .ds,#pv .sb,#pv .lb,#pv .ft{color:var(--s);font-size:13px}#pv .ds{white-space:pre-wrap}.ft{text-align:center;padding:8px}
+#pv .tg{width:36px;height:18px;border-radius:4px;background:var(--o);position:relative;flex:none}
+#pv .tg:after{content:"";position:absolute;left:3px;top:3px;width:12px;height:12px;border-radius:3px;background:#fff}
+#pv .tg.on{background:var(--a)}#pv .tg.on:after{left:21px}
+#pv .chev{width:7px;height:7px;border:solid var(--a);border-width:0 2px 2px 0;transform:rotate(-45deg);margin-right:6px}
+#pv .sw{width:36px;height:20px;border-radius:4px;background:var(--a)}
+#pv .kb,#pv .fd{border:1px solid var(--o);border-radius:4px;padding:4px 10px;font-size:13px;background:var(--b)}#pv .fd{margin-top:8px}
+#pv .sl{height:4px;background:var(--o);border-radius:2px;margin-top:10px}#pv .sl b{display:block;height:100%;background:var(--a);border-radius:2px}
+#pv hr{border:0;border-top:1px solid var(--o);width:100%;margin:4px 0;cursor:pointer}
+.imp{width:calc(100% - 28px);max-width:1372px;margin:0 auto 14px}
+@media(max-width:1000px){.grid{grid-template-columns:1fr}}
+@media(max-width:640px){#pv .body{grid-template-columns:90px 1fr}#pv .rail.r{grid-column:1/-1;border-left:0;border-top:1px solid var(--o)}}
+</style>
+</head>
+<body>
+<div class="nav"><b>SAR UI</b><span>builder</span><a href="https://github.com/Sariscute/Sar-UI-Library">GitHub</a></div>
+<section class="hero"><h1>Build scripts with SAR UI</h1><p>Lay out tabs, channels and elements, see them live, then copy the Lua.</p><a class="b p" href="#build">Start building</a></section>
+<section class="pn imp"><h3>Convert a script</h3><p class="mu" style="margin:0 0 8px;font-size:13px">Paste a script made with WindUI, Rayfield, Orion, Fluent or Kavo. It turns into a SAR UI layout you can edit below.</p><textarea autocomplete="off" id="src" rows="5" spellcheck="false" placeholder="Paste a script here"></textarea><button class="b p" data-a="conv">Convert</button> <span class="mu" id="cmsg" style="font-size:13px"></span></section>
+<main class="grid" id="build">
+<aside class="pn"><h3>Window</h3>
+<label>Title<input autocomplete="off" data-w="title"></label><label>Subtitle<input autocomplete="off" data-w="sub"></label>
+<label>Theme<select autocomplete="off" data-w="theme" id="th"></select></label>
+<label>Accent<input autocomplete="off" type="color" data-w="accent" id="ac"></label>
+<label class="ck"><input autocomplete="off" type="checkbox" data-w="settings">Settings tab</label>
+<label>Other window options (raw Lua)<textarea autocomplete="off" data-w="x" rows="3" spellcheck="false" placeholder="Size = UDim2.fromOffset(860, 540)"></textarea></label>
+<div id="st"></div></aside>
+<section><div id="pv"></div><p class="mu" id="tgt" style="font-size:13px;margin:10px 0 0"></p><div class="adds" id="adds"></div></section>
+<aside><div class="pn" id="pr"></div>
+<div class="pn" style="margin-top:14px"><h3>Script code (runs before the elements are added)</h3><textarea autocomplete="off" data-p="pre" rows="6" spellcheck="false" placeholder="local functions, variables, services, loops your buttons use. Tabs and channels already exist here."></textarea><h3>Script code (runs after the UI)</h3><textarea autocomplete="off" data-p="post" rows="4" spellcheck="false" placeholder="code that should run after the UI is built"></textarea></div>
+<div class="pn" style="margin-top:14px"><h3>Lua</h3><textarea autocomplete="off" id="out" spellcheck="false"></textarea>
+<button class="b p" data-a="copy">Copy code</button>
+<p class="mu" style="font-size:13px">You can edit the Lua above and the preview follows. Changing something in the builder rewrites the Lua.</p></div></aside>
+</main>
+<script>
+const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const T={Dark:['#121214','#1e1e22','#2e2e34','#de624a'],Midnight:['#0b0d16','#151928','#232940','#568ce6'],Light:['#f0f0f3','#fcfcfd','#dbdbe3','#d6563e'],Rose:['#160f12','#24191e','#3c2b33','#e86086'],Emerald:['#0d1412','#16221e','#253a32','#3cbe8c'],Crimson:['#120c0c','#201515','#3a2626','#dc3a3a']};
+const K=['Button','Toggle','Slider','Dropdown','Input','Keybind','ColorPicker','Label','Paragraph','Divider'];
+const NEW={Slider:{min:0,max:100,def:50},Dropdown:{vals:'One, Two, Three'},Toggle:{def:false},Keybind:{def:'F'}};
+const A={Button:'',Toggle:'state',Slider:'value',Dropdown:'value',Input:'text',Keybind:'key',ColorPicker:'color'};
+const KW=/^(and|break|do|else|elseif|end|false|for|function|goto|if|in|local|nil|not|or|repeat|return|then|true|until|while|continue)$/;
+try{localStorage.removeItem('sarb')}catch(e){}
+let S={w:{title:'My Script',sub:'SAR UI',theme:'Midnight',accent:'',settings:true,x:[]},pre:'',post:'',tabs:[{t:'Main',ch:[{t:'general',el:[]}]}],ti:0,ci:0,sel:-1};
+S.q=S.q||[];
+const tab=()=>S.tabs[S.ti],chan=()=>tab().ch[S.ci],els=()=>S.qm?S.q:chan().el;
+
+/* ---------- preview ---------- */
+function card(e,i,rq){
+ const s=`data-a="${rq?'qsel':'sel'}" data-i="${i}"`;
+ if(e.k=='Divider')return`<hr ${s}>`;
+ if(e.k=='Label')return`<div class="lb" ${s}>${esc(e.t)}</div>`;
+ let c='',b='';
+ if(e.k=='Button')c='<i class="chev"></i>';
+ if(e.k=='Toggle')c=`<i class="tg${e.def?' on':''}"></i>`;
+ if(e.k=='ColorPicker')c='<i class="sw"></i>';
+ if(e.k=='Keybind')c=`<i class="kb">${esc(e.def||'none')}</i>`;
+ if(e.k=='Slider'){const p=Math.max(0,Math.min(100,(e.def-e.min)/((e.max-e.min)||1)*100));b=`<div class="sl"><b style="width:${p}%"></b></div>`}
+ if(e.k=='Dropdown')b=`<div class="fd">${esc(String(e.vals||'').split(',')[0].trim()||(e.vr?'('+e.vr+')':'none'))}</div>`;
+ if(e.k=='Input')b='<div class="fd sb">enter text</div>';
+ return`<div class="cd${S.sel==i&&!!S.qm==rq?' sel':''}" ${s}><div class="hd"><div><div>${esc(e.t)}</div>${e.d?`<div class="ds">${esc(e.d)}</div>`:''}</div>${c}</div>${b}</div>`}
+function preview(){
+ const c=T[S.w.theme]||T.Dark,a=S.w.accent||c[3],lt=S.w.theme=='Light';
+ $('#pv').style.cssText=`--b:${c[0]};--e:${c[1]};--o:${c[2]};--a:${a};--t:${lt?'#1e1e24':'#e2e2e6'};--s:${lt?'#6c6c78':'#8a8a94'}`;
+ $('#pv').innerHTML=`<div class="top"><span class="logo">S</span><b>${esc(S.w.title)}</b><span class="pl">${esc(S.w.sub)}</span></div><div class="body"><div class="rail">${S.tabs.map((t,i)=>`<div class="ti${i==S.ti?' on':''}" data-a="tab" data-i="${i}">${esc(t.t)}</div>`).join('')}<div class="ti" data-a="addtab">+ tab</div>${S.w.settings?'<div class="ti">Settings</div>':''}</div><div><div class="cbar">${tab().ch.map((c,j)=>`<span class="ch${j==S.ci?' on':''}" data-a="ch" data-i="${j}"># ${esc(c.t)}</span>`).join('')}<span class="ch" data-a="addch">+</span></div><div class="pg">${chan().el.map((e,i)=>card(e,i,false)).join('')||'<span class="sb">Empty channel. Add elements below.</span>'}</div><div class="ft">SAR UI</div></div><div class="rail r"><b class="sb">Quick actions</b>${S.q.map((e,i)=>card(e,i,true)).join('')}<div class="ti" data-a="qmode">+ add here</div></div></div>`}
+
+/* ---------- Lua generation ---------- */
+const q=s=>'"'+String(s??'').replace(/\\/g,'\\\\').replace(/"/g,'\\"').replace(/\r?\n/g,'\\n')+'"';
+// multi-line text becomes a long-bracket string so it stays readable
+const qq=s=>{s=String(s??'');if(!s.includes('\n'))return q(s);let l='';while(s.includes(']'+l+']'))l+='=';return'['+l+'['+'\n'+s+']'+l+']'};
+const ex=(arr,ind)=>{const o=[];(arr||[]).forEach(s=>{s=String(s).trim();if(!s)return;const ls=s.split('\n');ls[0]=ind+ls[0];o.push(...ls);if(/--/.test(ls[ls.length-1]))o.push(ind+',');else o[o.length-1]+=','});return o};
+function eg(e,v){
+ if(e.k=='Divider')return[`${v}:Divider()`];
+ if(e.k=='Label')return[`${v}:Label({ Title = ${e.tr?e.t:q(e.t)} })`];
+ const r=[`${v}:${e.k}({`,`    Title = ${e.tr?e.t:q(e.t)},`];
+ if(e.d)r.push(`    ${e.k=='Paragraph'?'Content':'Desc'} = ${e.dr?e.d:qq(e.d)},`);
+ if(e.k=='Toggle')r.push(`    Default = ${!!e.def},`);
+ if(e.k=='Slider')r.push(`    Min = ${+e.min||0},`,`    Max = ${+e.max||100},`,`    Default = ${+e.def||0},`);
+ if(e.k=='Dropdown')r.push(e.vr?`    Values = ${e.vr},`:`    Values = { ${String(e.vals||'').split(',').map(s=>s.trim()).filter(Boolean).map(q).join(', ')} },`);
+ if(e.k=='Keybind'&&e.def)r.push(`    Default = Enum.KeyCode.${String(e.def).replace(/\W/g,'')},`);
+ r.push(...ex(e.x,'    '));
+ if(e.k in A){r.push(`    Callback = function(${e.ca||A[e.k]})`);(e.cb||'-- your code here').split('\n').forEach(l=>r.push('        '+l));r.push('    end,')}
+ r.push('})');return r}
+function gen(){
+ const w=S.w,L=['local SAR = loadstring(game:HttpGet("https://raw.githubusercontent.com/Sariscute/Sar-UI-Library/refs/heads/main/second%20ver"))()','','local Window = SAR:CreateWindow({',`    Title = ${q(w.title)},`,`    Subtitle = ${q(w.sub)},`,`    Theme = ${q(w.theme)},`,...ex(w.x,'    '),'})'];
+ if(w.accent)L.push(`Window:SetAccent(Color3.fromHex(${q(w.accent)}))`);
+ // tabs and channels are created first, so your own code (and any loop that makes UI) can already use them
+ const used=new Set(['SAR','Window']);
+ const uniq=(v,d)=>{let n=v&&/^[A-Za-z_]\w*$/.test(v)&&!KW.test(v)&&!used.has(v)?v:d;while(used.has(n))n+='_';used.add(n);return n};
+ S.tabs.forEach((t,i)=>{t._n=uniq(t.v,'Tab'+(i+1))});
+ S.tabs.forEach((t,i)=>t.ch.forEach((c,j)=>{c._n=uniq(c.v,`Channel${i+1}_${j+1}`)}));
+ S.tabs.forEach(t=>{L.push('',`local ${t._n} = Window:Tab({ Title = ${q(t.t)} })`);t.ch.forEach(c=>L.push(`local ${c._n} = ${t._n}:Channel(${q(c.t)})`))});
+ if(S.pre)L.push('',S.pre);
+ if(S.q.length){L.push('');S.q.forEach(e=>L.push(...eg(e,'Window.Right')))}
+ S.tabs.forEach(t=>t.ch.forEach(c=>{if(c.el.length){L.push('');c.el.forEach(e=>L.push(...eg(e,c._n)))}}));
+ if(w.settings)L.push('','Window:CreateSettingsTab()');
+ if(S.post)L.push('',S.post);
+ return L.join('\n')}
+
+/* ---------- element editor ---------- */
+function props(){
+ const e=els()[S.sel],P=$('#pr');
+ if(!e){P.innerHTML='<h3>Element</h3><p class="mu">Add an element below the preview, then click it to edit.</p>';return}
+ const f=(k,l,v,ty='text')=>`<label>${l}<input type="${ty}" data-f="${k}" value="${esc(v)}"></label>`;
+ let h=`<h3>${e.k}</h3>`;
+ if(e.k!='Divider')h+=f('t',e.k=='Label'?'Text':'Title',e.t);
+ if(!['Label','Divider'].includes(e.k))h+=f('d',e.k=='Paragraph'?'Content':'Description',e.d);
+ if(e.k=='Toggle')h+=`<label class="ck"><input type="checkbox" data-f="def"${e.def?' checked':''}>On by default</label>`;
+ if(e.k=='Slider')h+=f('min','Min',e.min,'number')+f('max','Max',e.max,'number')+f('def','Default',e.def,'number');
+ if(e.k=='Dropdown')h+=f('vals','Values (comma separated)',e.vals)+(e.vr?`<p class="mu" style="font-size:12px;margin:-4px 0 8px">Linked to <code>${esc(e.vr)}</code> in your script. Editing the list replaces the link.</p>`:'');
+ if(e.k=='Keybind')h+=f('def','Key name (for example F)',e.def);
+ if(!['Label','Divider'].includes(e.k))h+=`<label>Other options (raw Lua, one per line)<textarea data-f="x" rows="3" spellcheck="false" placeholder="Increment = 10">${esc((e.x||[]).join(',\n'))}</textarea></label>`;
+ if(e.k in A)h+=`<label>Callback code${A[e.k]?` (${e.ca||A[e.k]})`:''}<textarea data-f="cb" rows="4" spellcheck="false">${esc(e.cb)}</textarea></label>`;
+ P.innerHTML=h+'<div class="row"><button class="b" data-a="up">Up</button><button class="b" data-a="down">Down</button><button class="b d" data-a="del">Remove</button></div>'}
+function side(){$('#st').innerHTML=`<h3>Tab</h3><label>Name<input data-n="t" value="${esc(tab().t)}"></label><button class="b d" data-a="deltab">Delete tab</button><h3 style="margin-top:14px">Channel</h3><label>Name<input data-n="c" value="${esc(chan().t)}"></label><button class="b d" data-a="delch">Delete channel</button>`}
+function draw(skip){preview();if(!skip)$('#out').value=gen();$('#tgt').textContent=S.qm?'Adding to: quick actions (right rail)':'Adding to: # '+chan().t}
+function full(){draw();props();side()}
+document.addEventListener('click',ev=>{
+ const t=ev.target.closest('[data-a]');if(!t)return;
+ const a=t.dataset.a,i=+t.dataset.i;
+ if(['tab','ch','addtab','addch','deltab','delch','sel'].includes(a))S.qm=false;
+ const L=els();
+ if(a=='copy'){const o=$('#out');o.select();let ok=false;try{ok=document.execCommand('copy')}catch(e){}if(!ok&&navigator.clipboard)navigator.clipboard.writeText(o.value).catch(()=>{});t.textContent='Copied';setTimeout(()=>t.textContent='Copy code',1200);return}
+ if(a=='conv'){run();return}
+ if(a=='tab'){S.ti=i;S.ci=0;S.sel=-1}
+ else if(a=='ch'){S.ci=i;S.sel=-1}
+ else if(a=='addtab'){S.tabs.push({t:'Tab '+(S.tabs.length+1),ch:[{t:'general',el:[]}]});S.ti=S.tabs.length-1;S.ci=0;S.sel=-1}
+ else if(a=='addch'){tab().ch.push({t:'channel '+(tab().ch.length+1),el:[]});S.ci=tab().ch.length-1;S.sel=-1}
+ else if(a=='deltab'&&S.tabs.length>1){S.tabs.splice(S.ti,1);S.ti=0;S.ci=0;S.sel=-1}
+ else if(a=='delch'&&tab().ch.length>1){tab().ch.splice(S.ci,1);S.ci=0;S.sel=-1}
+ else if(a=='add'){const k=t.dataset.k;L.push({k,t:k=='Label'?'Section label':k,d:'',cb:'',x:[],...NEW[k]});S.sel=L.length-1}
+ else if(a=='sel')S.sel=i;
+ else if(a=='qsel'){S.qm=true;S.sel=i}
+ else if(a=='qmode'){S.qm=true;S.sel=-1}
+ else if(a=='up'&&S.sel>0){[L[S.sel-1],L[S.sel]]=[L[S.sel],L[S.sel-1]];S.sel--}
+ else if(a=='down'&&S.sel<L.length-1){[L[S.sel+1],L[S.sel]]=[L[S.sel],L[S.sel+1]];S.sel++}
+ else if(a=='del'){L.splice(S.sel,1);S.sel=-1}
+ full()});
+document.addEventListener('input',ev=>{
+ const t=ev.target;
+ if(t.id=='out'){lsync();return}
+ if(t.id=='src')return;
+ const d=t.dataset,v=t.type=='checkbox'?t.checked:t.value;
+ if(d.w!==undefined){
+  if(d.w=='x')S.w.x=splitTop(v);
+  else{S.w[d.w]=v;if(d.w=='theme'){S.w.accent='';$('#ac').value=T[v][3]}}}
+ else if(d.n)(d.n=='t'?tab():chan()).t=v;
+ else if(d.p)S[d.p]=v;
+ else if(d.f){const e=els()[S.sel];
+  if(d.f=='x')e.x=splitTop(v);
+  else{e[d.f]=t.type=='number'?+v:v;if(d.f=='t')e.tr=0;if(d.f=='d')e.dr=0;if(d.f=='vals')e.vr=''}}
+ draw()});
+
+/* ---------- converter: Lua text helpers ---------- */
+const MP={};
+const un=s=>String(s).replace(/\\(.)/g,(_,c)=>c=='n'?'\n':c=='t'?'\t':c);
+const SRE=/(["'])((?:\\.|(?!\1)[^\\])*)\1/g;
+const TKR=/(["'])(?:\\.|(?!\1)[^\\])*\1|--\[(=*)\[[\s\S]*?\]\2\]|\[(=*)\[[\s\S]*?\]\3\]|--[^\n]*/;
+const mk=x=>new RegExp(TKR.source+'|'+x,'g');            // tokenizer: strings and comments first, then whatever else is asked for
+const LIBS=[['SAR UI',/SAR:CreateWindow/],['Rayfield',/Rayfield/],['Fluent',/Fluent/],['WindUI',/WindUI/],['Kavo',/Kavo|CreateLib/],['Venyx',/venyx/i],['Orion',/OrionLib|MakeWindow/],['Linoria',/Linoria|AddLeftGroupbox/]];
+const KM={tab:'Tab',page:'Tab',section:'Label',folder:'Label',category:'Label',button:'Button',toggle:'Toggle',slider:'Slider',dropdown:'Dropdown',input:'Input',textbox:'Input',keybind:'Keybind',bind:'Keybind',colorpicker:'ColorPicker',colourpicker:'ColorPicker',label:'Label',paragraph:'Paragraph',divider:'Divider',channel:'Channel',groupbox:'Channel',leftgroupbox:'Channel',rightgroupbox:'Channel',lefttabbox:'Channel',righttabbox:'Channel'};
+const kind=n=>KM[n.toLowerCase().replace(/^(create|add|new|make)(?=.)/,'')];
+const SKIP=/^(game|workspace|script|math|string|table|task|os|Instance|Vector3|Vector2|CFrame|Color3|UDim2|UDim|Enum|Random|coroutine|pcall)$/;
+const str=(t,k)=>{const m=new RegExp('\\b(?:'+k+')\\s*=\\s*'+SRE.source).exec(t);return m?un(m[2]):''};
+const num=(t,k)=>{const m=new RegExp('\\b'+k+'\\s*=\\s*(-?\\d[\\d.]*)').exec(t);return m?+m[1]:undefined};
+// end of the long bracket that starts at k, or -1
+function lb(s,k){const m=/^\[(=*)\[/.exec(s.slice(k,k+40));if(!m)return -1;const e=s.indexOf(']'+m[1]+']',k+m[0].length);return e<0?s.length:e+m[1].length+1}
+// index of the bracket that closes the one at i (skips strings and comments)
+function mc(s,i){const o=s[i],c={'(':')','{':'}'}[o];let d=0;for(let k=i;k<s.length;k++){const x=s[k];
+ if(x=='['&&lb(s,k)>0)k=lb(s,k);
+ else if(x=='-'&&s[k+1]=='-'&&lb(s,k+2)>0)k=lb(s,k+2);
+ else if(x=='"'||x=="'"){k++;while(k<s.length&&s[k]!=x){if(s[k]=='\\')k++;k++}}
+ else if(x=='-'&&s[k+1]=='-'){while(k<s.length&&s[k]!='\n')k++}
+ else if(x==o)d++;else if(x==c&&--d==0)return k}return s.length-1}
+// text of a function body that starts at i, up to its matching "end"
+function body(t,i){const re=mk('\\b(?:function|if|do|end)\\b');re.lastIndex=i;let d=1,m;
+ while(m=re.exec(t)){if(!/^(function|if|do|end)$/.test(m[0]))continue;if(m[0]=='end'){if(--d==0)return t.slice(i,m.index)}else d++}return t.slice(i)}
+const ded=b=>{const L=b.replace(/\s+$/,'').split('\n'),f=L.shift().trim(),m=Math.min(99,...L.filter(l=>l.trim()).map(l=>l.search(/\S/)));return[f,...L.map(l=>l.slice(m))].filter((l,i)=>i||l).join('\n')};
+const dedent=b=>{const L=b.replace(/\s+$/,'').split('\n').filter(l=>l.trim()),m=Math.min(99,...L.map(l=>l.search(/\S/)));return L.map(l=>l.slice(m)).join('\n')};
+const strc=s=>s.replace(mk('(?!)'),m=>m[0]=='-'?'':m);        // drop comments
+// split on top-level commas/semicolons (or on top-level ".." when dd is set)
+function splitTop(s,dd){const re=mk('[(){}\\[\\]]|\\b(?:function|if|do|end|repeat|until)\\b|'+(dd?'\\.\\.(?!\\.)':'[,;]'));let d=0,p=0,m;const out=[];
+ while(m=re.exec(s)){const w=m[0];
+  if(/^[({\[]$/.test(w)||/^(function|if|do|repeat)$/.test(w))d++;
+  else if(/^[)}\]]$/.test(w)||/^(end|until)$/.test(w))d--;
+  else if(d<=0&&(w==','||w==';'||w=='..')){out.push(s.slice(p,m.index));p=m.index+w.length}}
+ out.push(s.slice(p));return out.filter(x=>x.trim())}
+// entries of a table body: {k,v,raw} for key = value, {v,raw} for positional
+function ent(inner){const list=[];for(let en of splitTop(inner)){en=en.replace(/^(?:\s|--\[(=*)\[[\s\S]*?\]\1\]|--[^\n]*)+/,'');if(!en.trim())continue;
+ const m=/^(?:\[\s*(["'])((?:\\.|(?!\1)[^\\])*)\1\s*\]|([A-Za-z_]\w*))\s*=(?!=)\s*([\s\S]*)$/.exec(en);
+ list.push(m?{k:m[3]||un(m[2]),v:m[4].trim(),raw:en.trim()}:{v:en.trim(),raw:en.trim()})}return list}
+const tbl=t=>t&&t[0]=='{'?ent(t.slice(1,mc(t,0))):null;
+const lit=v=>{let m=/^(["'])((?:\\.|(?!\1)[^\\])*)\1$/.exec(v);if(m)return un(m[2]);m=/^\[(=*)\[([\s\S]*?)\]\1\]$/.exec(v);if(m)return m[2].replace(/^\r?\n/,'')};
+// follow local aliases such as  name -> location[1] -> "Locker Room"
+function res(v,env,d=0){v=v.trim();if(d>8)return v;
+ if(/^[A-Za-z_]\w*$/.test(v)&&env[v]!==undefined)return res(env[v],env,d+1);
+ const m=/^([A-Za-z_]\w*)\s*(?:\[\s*(-?\d+)\s*\]|\[\s*(["'])(\w+)\3\s*\]|\.([A-Za-z_]\w*))$/.exec(v);
+ if(m&&env[m[1]]!==undefined){const L=tbl(res(env[m[1]],env,d+1));if(L){const pos=L.filter(x=>x.k===undefined),x=m[2]!==undefined?pos[+m[2]-1]:L.find(y=>y.k===(m[4]||m[5]));if(x)return res(x.v,env,d+1)}}
+ return v}
+function evs(v,env){const r=res(strc(v),env);let s=lit(r);if(s!==undefined)return s;
+ const ps=splitTop(r,1);if(ps.length>1){const o=ps.map(p=>{const x=evs(p,env);return x!==undefined?x:/^-?\d+(\.\d+)?$/.test(p.trim())?p.trim():undefined});if(o.every(x=>x!==undefined))return o.join('')}
+ const pm=/^\(([\s\S]*)\)$/.exec(r);if(pm&&mc(r,0)==r.length-1)return evs(pm[1],env)}
+// top-level statements of a chunk of Lua
+function tops(t){const re=mk('[(){}\\[\\]]|\\b(?:function|if|do|end|repeat|until)\\b|\\n');let d=0,p=0,m;const st=[];
+ while(m=re.exec(t)){const w=m[0];
+  if(/^[({\[]$/.test(w)||/^(function|if|do|repeat)$/.test(w))d++;
+  else if(/^[)}\]]$/.test(w)||/^(end|until)$/.test(w))d--;
+  else if(w=='\n'&&d<=0){st.push(t.slice(p,m.index+1));p=m.index+1}}
+ st.push(t.slice(p));return st.filter(s=>s.trim())}
+const onlyLocals=t=>tops(t).every(s=>{const x=strc(s).trim();return !x||/^local\b(?!\s+function)/.test(x)});
+// local a, b = x, y  ->  {names, values}
+function envOf(sts){const env={},L=[];for(const s of sts){const m=/^\s*local\s+([A-Za-z_]\w*(?:\s*,\s*[A-Za-z_]\w*)*)\s*=\s*([\s\S]*)$/.exec(strc(s));if(!m)continue;
+ const ns=m[1].split(',').map(x=>x.trim()),vs=splitTop(m[2]);ns.forEach((n,i)=>{if(vs[i]!==undefined)env[n]=vs[i].trim()});L.push({text:s.replace(/\s+$/,''),names:ns,val:m[2]})}return{env,L}}
+// the table literal behind  local NAME = { ... }  that appears before position `before`
+function gl(src,name,before){const r=new RegExp('(?:^|\\n)[ \\t]*local[ \\t]+'+name+'[ \\t]*=[ \\t]*\\{','g');let d,li=-1;const s=src.slice(0,before);while(d=r.exec(s))li=d.index+d[0].length-1;return li<0?null:src.slice(li,mc(src,li)+1)}
+// every function / if / loop block in the script, with its parameters
+function blocks(s){const re=mk('\\b(?:function|if|do|end|for|while|repeat|until)\\b');const st=[],out=[];let m,pl=false;
+ while(m=re.exec(s)){const w=m[0];if(!/^[a-z]+$/.test(w))continue;
+  if(w=='for'||w=='while'){pl=true;continue}
+  if(w=='function'){const p=/^\s*(?:[\w.:]+\s*)?\(([^)]*)\)/.exec(s.slice(m.index+8,m.index+400));st.push({t:'fn',s:m.index,p:p?p[1]:''})}
+  else if(w=='do'){st.push({t:pl?'loop':'do',s:m.index});pl=false}
+  else if(w=='if')st.push({t:'if',s:m.index});
+  else if(w=='repeat')st.push({t:'loop',s:m.index});
+  else{const b=st.pop();if(b){b.e=m.index+(w=='end'?3:0);out.push(b)}}}
+ return out}
+const hex=s=>{s=s.trim();let m=/^Color3\s*\.\s*fromHex\s*\(\s*(["'])#?([0-9a-fA-F]{6})\1\s*\)$/.exec(s);if(m)return'#'+m[2].toLowerCase();
+ m=/^Color3\s*\.\s*fromRGB\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/.exec(s);if(m)return'#'+[1,2,3].map(i=>Math.min(255,+m[i]).toString(16).padStart(2,'0')).join('');
+ m=/^Color3\s*\.\s*new\s*\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*\)$/.exec(s);if(m)return'#'+[1,2,3].map(i=>Math.round(Math.min(1,+m[i])*255).toString(16).padStart(2,'0')).join('')};
+
+/* Loops and helper functions that create UI (for each row in a table, AddToggle("x") ...) are unrolled into one
+   plain block per item, so each one becomes a real, editable element. */
+const OPEN='do --[[@sar]]',CLOSE='end --[[@/sar]]';
+function expand(src){
+ const UI=t=>{const r=/([\w.]+)\s*[:.]\s*([A-Za-z_]\w*)\s*\(/g;let m;while(m=r.exec(t)){if(kind(m[2])&&!SKIP.test(m[1].split('.')[0]))return true}return false};
+ for(let g=0;g<14&&src.length<400000;g++){let ch=false,m;
+  const lr=/^([ \t]*)for\s+([A-Za-z_]\w*)\s*(?:,\s*([A-Za-z_]\w*))?\s+in\s+(ipairs|pairs)\s*\(/gm;
+  while(m=lr.exec(src)){
+   const po=m.index+m[0].length-1,pc=mc(src,po),ar=src.slice(po+1,pc).trim(),dm=/^\s*do\b/.exec(src.slice(pc+1));
+   if(!dm)continue;
+   const bs=pc+1+dm[0].length,bd=body(src,bs),be=bs+bd.length+3;
+   if(!UI(bd))continue;
+   let tt=null;
+   if(ar[0]=='{'){if(mc(ar,0)==ar.length-1)tt=ar}else if(/^[A-Za-z_]\w*$/.test(ar))tt=gl(src,ar,m.index);
+   const E=tbl(tt);if(!E||!E.length||E.length>150)continue;
+   let items=[];
+   if(m[4]=='ipairs'){let n=0;E.forEach(x=>{if(x.k===undefined)items.push({k:String(++n),v:strc(x.v).trim()})})}
+   else{let n=0;E.forEach(x=>items.push({k:x.k!==undefined?q(x.k):String(++n),v:strc(x.v).trim()}))}
+   if(!items.length)continue;
+   const ind=m[1],rep=items.map(it=>`${ind}${OPEN}\n${ind}    local ${m[2]}${m[3]?', '+m[3]:''} = ${it.k}${m[3]?', '+it.v:''}${bd}${CLOSE}`).join('\n');
+   src=src.slice(0,m.index)+rep+src.slice(be);ch=true;break}
+  if(ch)continue;
+  const fr=/^([ \t]*)(?:local[ \t]+)?function[ \t]+([A-Za-z_]\w*)[ \t]*\(([^)]*)\)/gm;
+  while(m=fr.exec(src)){
+   const ps=m[3].trim();if(!ps||/\.\.\./.test(ps))continue;
+   const bs=m.index+m[0].length,bd=body(src,bs),be=bs+bd.length+3;
+   if(!UI(bd))continue;
+   const cr=new RegExp('^([ \\t]*)'+m[2]+'[ \\t]*\\(','gm'),ed=[];let c;
+   while(c=cr.exec(src)){if(c.index>=m.index&&c.index<be)continue;
+    const o=c.index+c[0].length-1,e=mc(src,o);
+    if(!/^[ \t]*;?[ \t]*(\r?\n|$)/.test(src.slice(e+1)))continue;
+    const args=src.slice(o+1,e).trim();
+    ed.push([c.index,e+1,`${c[1]}${OPEN}\n${c[1]}    local ${ps}${args?' = '+args:''}${bd}${CLOSE}`])}
+   if(!ed.length)continue;
+   const eo=/^[ \t]*\r?\n?/.exec(src.slice(be))[0].length;
+   ed.push([m.index,be+eo,'']);
+   ed.sort((p,r)=>r[0]-p[0]).forEach(x=>{src=src.slice(0,x[0])+x[2]+src.slice(x[1])});ch=true;break}
+  if(!ch)break}
+ return src}
+
+/* ---------- converter ---------- */
+function conv(src0){
+ const isSAR=/Sar-UI-Library|\bSAR\s*:\s*CreateWindow/.test(src0);
+ const src=expand(src0);
+ const re=/([\w.]+)\s*[:.]\s*([A-Za-z_]\w*)\s*\(/g;
+ const ts=[],vm={},cm={},qa=[];let m,n=0,nd=0,wt='',ws='',wth='',wx=[],ac='';
+ const nt=t=>ts.push({t,_f:1,ch:[{t:'general',el:[]}]})-1;
+ const tabFor=r=>ts[vm[r.split('.').pop()]??ts.length-1]||ts[nt('Main')];
+ const rm=[],ev={};let lv='',wv='';
+ const BL=blocks(src);
+ const dyn=(p,a)=>BL.some(b=>b.s<p&&p<b.e&&(b.t=='loop'||(b.t=='fn'&&b.p.split(',').map(x=>x.trim().replace(/\W/g,'')).filter(Boolean).some(x=>new RegExp('\\b'+x+'\\b').test(a)))));
+ const SY=[];{const mr=/do --\[\[@sar\]\]|end --\[\[@\/sar\]\]/g,sk=[];let x;while(x=mr.exec(src)){if(x[0][0]=='d')sk.push(x.index);else{const s0=sk.pop();if(s0!==undefined)SY.push([s0,x.index])}}SY.sort((p,r)=>p[0]-r[0])}
+ const cut=(from,to)=>{let t='',p=from;for(const r of rm.filter(r=>r[0]>=from&&r[1]<=to).sort((a,b)=>a[0]-b[0])){if(r[0]<p)continue;t+=src.slice(p,r[0]);p=r[1]}return t+src.slice(p,to)};
+ const eol=c=>/^[^\S\n]*;?[^\S\n]*\n?/.exec(src.slice(c+1))[0].length;
+ const stmt=(s0,c,win)=>{const ls=src.lastIndexOf('\n',s0-1)+1,pf=src.slice(ls,s0),mt=/^[ \t]*;?[ \t]*(?:\r?\n|$)/.exec(src.slice(c+1));
+  if(mt&&(/^[ \t]*$/.test(pf)||win&&/^[ \t]*(?:local[ \t]+)?[\w.]+[ \t]*=[ \t]*$/.test(pf)))rm.push([ls,c+1+mt[0].length,'']);else rm.push([s0,c+1,'__stub'])};
+ const wm=/([\w.]+)\s*[:.]\s*(?:CreateWindow|CreateLib|MakeWindow|NewWindow|AddWindow)\s*\(|(\b\w*venyx\w*)\.new\s*\(/i.exec(src);
+ if(wm){const o=wm.index+wm[0].length-1,c0=mc(src,o),a=src.slice(o+1,c0);lv=wm[1]||wm[2];wv=(/(\w+)\s*=\s*$/.exec(src.slice(Math.max(0,wm.index-50),wm.index))||[])[1]||'';stmt(wm.index,c0,1);
+  wt=str(a,'Title|Name')||un((a.match(/(["'])(.*?)\1/)||[])[2]||'');ws=str(a,'Subtitle');wth=str(a,'Theme');
+  if(isSAR){const o2=a.indexOf('{');if(o2>=0)wx=ent(a.slice(o2+1,mc(a,o2))).filter(x=>x.k!==undefined&&!/^(Title|Name|Subtitle|Theme)$/.test(x.k)||x.k===undefined).map(x=>strc(x.raw).trim())}}
+ while(m=re.exec(src)){
+  const k=kind(m[2]),rv=m[1];if(!k||SKIP.test(rv.split('.')[0]))continue;
+  const o=m.index+m[0].length-1,c=mc(src,o),a=src.slice(o+1,c);re.lastIndex=c+1;
+  if(!a.trim()&&k!='Divider')continue;
+  if(dyn(m.index,a)){nd++;continue}          // built from runtime data: left untouched in your script code
+  const av=/(\w+)\s*=\s*$/.exec(src.slice(Math.max(0,m.index-50),m.index));
+  stmt(m.index,c,(k=='Tab'||k=='Channel')&&av?1:0);
+  // locals declared by an unrolled loop/function around this call
+  const lsx=src.lastIndexOf('\n',m.index-1)+1,enc=SY.filter(s=>s[0]<m.index&&m.index<s[1]);
+  let ps='';enc.forEach((s,i)=>{ps+=cut(s[0]+OPEN.length,i+1<enc.length?enc[i+1][0]:lsx)+'\n'});
+  const PE=envOf(tops(ps).filter(s=>/^\s*local\b(?!\s+function)/.test(strc(s)))),env=PE.env;
+  const tm=/^\s*(?:(["'])[^"']*\1\s*,\s*)?\{/.exec(a),tb=!!tm&&(/^\s*\{/.test(a)||/\b\w+\s*=/.test(a.slice(tm[0].length)));
+  let t='',d='',tr=0,dr=0,cbBody='',ca='';const e={k,x:[]};
+  const fr=/\bfunction\s*\(([^)]*)\)/g;let pre='',pp=0,f,fm=null;
+  if(tb){
+   const F=ent(a.slice(tm[0].length,mc(a,tm[0].length-1))),kv=F.filter(x=>x.k!==undefined),pos=F.filter(x=>x.k===undefined),used=new Set();
+   const take=(...ks)=>{const x=kv.find(y=>ks.includes(y.k));kv.filter(y=>ks.includes(y.k)).forEach(y=>used.add(y));return x};
+   const tx=take('Title','Name','Text');
+   if(tx){const s=evs(tx.v,env);if(s!==undefined)t=s;else if(isSAR){t=strc(tx.v).trim();tr=1}}
+   else if(pos[0]&&lit(pos[0].v)!==undefined)t=lit(pos[0].v);
+   const dx=take('Desc','Description','Content','Info');
+   if(dx){const s=evs(dx.v,env);if(s!==undefined)d=s;else if(isSAR){d=strc(dx.v).trim();dr=1}}
+   const cx=take('Callback');
+   if(cx){const fm2=/^function\s*\(([^)]*)\)/.exec(cx.v);
+    if(fm2){cbBody=ded(body(cx.v,fm2[0].length));ca=fm2[1].split(',')[0].trim()}
+    else{const nm=/^[A-Za-z_][\w.]*$/.exec(strc(cx.v).trim());if(nm&&!/^(true|false|nil)$/.test(nm[0]))cbBody=`${nm[0]}(${A[k]||''})`}}
+   const keep=x=>{used.add(x)};
+   if(k=='Toggle'){const x=take('Default','Value','CurrentValue','State');if(x){const r=res(strc(x.v),env);if(r=='true'||r=='false')e.def=r=='true';else if(isSAR){used.delete(x)}}e.def=!!e.def}
+   if(k=='Slider'){let mn=take('Min'),mx=take('Max'),rg=take('Range'),df=take('Default','CurrentValue','Value');
+    const nv=x=>{if(!x)return;const r=res(strc(x.v),env);return /^-?\d+(\.\d+)?$/.test(r)?+r:undefined};
+    let a1=nv(mn),b1=nv(mx),c1=nv(df);if(mn&&a1===undefined&&isSAR)used.delete(mn);if(mx&&b1===undefined&&isSAR)used.delete(mx);if(df&&c1===undefined&&isSAR)used.delete(df);
+    if(rg){const r=/^\{\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)/.exec(res(strc(rg.v),env));if(r){a1=+r[1];b1=+r[2]}}
+    const pn=pos.map(x=>+res(x.v,env)).filter(x=>!isNaN(x));if(a1===undefined&&b1===undefined&&pn.length>1){a1=pn[0];b1=pn[1];c1=c1??(pn.length>3?pn[3]:pn[2])}
+    e.min=a1??0;e.max=b1??100;e.def=c1??e.min}
+   if(k=='Dropdown'){const vx=take('Values','Options','List');
+    if(vx){const raw=strc(vx.v).trim();let r=res(raw,env),Lt=null,link=false;
+     if(/^[A-Za-z_]\w*$/.test(r)){const gt=gl(src,r,m.index);if(gt){Lt=tbl(gt);link=true}}else Lt=tbl(r);
+     const vs=Lt?Lt.filter(y=>y.k===undefined).map(y=>lit(y.v)):[];
+     if(Lt&&vs.length&&vs.every(s=>s!==undefined)){e.vals=vs.join(', ');if(isSAR&&(link||vs.some(x=>x.includes(','))))e.vr=raw}
+     else{e.vals='';if(isSAR)e.vr=raw}}
+    else e.vals=''}
+   if(k=='Keybind'){const x=take('Default','CurrentKeybind','Key','Value');
+    if(x){const r=res(strc(x.v),env),em=/^Enum\.KeyCode\.(\w+)$/.exec(r),sl=lit(r);if(em)e.def=em[1];else if(sl!==undefined)e.def=sl;else if(isSAR)used.delete(x)}e.def=e.def||''}
+   if(isSAR)e.x=[...kv.filter(y=>!used.has(y)),...pos.slice(tx||lit((pos[0]||{v:''}).v)===undefined?0:1)].map(y=>{if(y.k===undefined)return strc(y.raw).trim();const val=res(strc(y.v),env);return(/^[A-Za-z_]\w*$/.test(y.k)?y.k:'['+q(y.k)+']')+' = '+val});
+   void keep;
+  }else{
+   while(f=fr.exec(a)){const bs=f.index+f[0].length,bd=body(a,bs),en=bs+bd.length+3;if(!fm){fm=f;fm.bd=bd}pre+=a.slice(pp,f.index);pp=en;fr.lastIndex=en}
+   pre+=a.slice(pp);
+   const ss=[...pre.split('{')[0].matchAll(SRE)].map(x=>un(x[2])),pa=splitTop(pre.split('{')[0]);
+   t=ss[0]??evs(pa[0]||'',env)??'';d=ss[1]??evs(pa[1]||'',env)??'';
+   if(fm){cbBody=ded(fm.bd);ca=fm[1].split(',')[0].trim()}
+   else{const nm=(/,\s*([A-Za-z_][\w.]*)\s*$/.exec(pre.trim())||[])[1];if(nm&&!/^(true|false|nil)$/.test(nm))cbBody=`${nm}(${A[k]||''})`}
+   if(k=='Toggle')e.def=/\b(?:Default|Value|CurrentValue|State)\s*=\s*true/.test(pre)||/,\s*true\s*(?:,|$)/.test(pre.trim());
+   if(k=='Slider'){let mn=num(pre,'Min'),mx=num(pre,'Max'),pd;
+    const ns=(pre.replace(SRE,'').match(/-?\d+\.?\d*/g)||[]).map(Number);
+    if(ns.length>1){if(ns.length>2&&/venyx/i.test(src)){pd=ns[0];mn=ns[1];mx=ns[2]}else{mx=ns[0];mn=ns[1]}}
+    e.min=mn??0;e.max=mx??100;e.def=num(pre,'Default')??num(pre,'CurrentValue')??pd??e.min}
+   if(k=='Dropdown'){const l=/(?:Values|Options|List)\s*=\s*\{([^}]*)\}/.exec(pre)||/\{([^}]*)\}/.exec(pre);e.vals=l?[...l[1].matchAll(SRE)].map(x=>un(x[2])).join(', '):''}
+   if(k=='Keybind')e.def=(/Enum\.KeyCode\.(\w+)/.exec(a)||[])[1]||str(pre,'CurrentKeybind|Default|Key')}
+  if(k=='Channel'){const tt=ts[vm[rv.split('.').pop()]??ts.length-1]||ts[nt('Main')];let ch;
+   if(tt._f){tt._f=0;ch=tt.ch[0];ch.t=t||'general'}else{ch={t:t||'channel',el:[]};tt.ch.push(ch)}
+   if(av)cm[av[1]]=ch,ch.v=av[1];continue}
+  if(k=='Tab'){const i=nt(t||'Tab '+(ts.length+1));if(av){vm[av[1]]=i;ts[i].v=av[1]}continue}
+  if(/^(create|add|new|make)?section$/i.test(m[2])&&av)vm[av[1]]=vm[rv.split('.').pop()]??ts.length-1;
+  // keep the loop/function locals the callback needs
+  if(cbBody&&PE.L.length){const need=new Set();PE.L.forEach(s=>s.names.forEach(x=>{if(new RegExp('\\b'+x+'\\b').test(cbBody))need.add(x)}));
+   let go=true;const pick=new Set();while(go){go=false;for(const s of PE.L){if(pick.has(s))continue;if(s.names.some(x=>need.has(x))){pick.add(s);go=true;(s.val.match(/[A-Za-z_]\w*/g)||[]).forEach(x=>need.add(x))}}}
+   const pl=PE.L.filter(s=>pick.has(s)).map(s=>s.text);if(pl.length)cbBody=dedent(pl.join('\n'))+'\n'+cbBody}
+  Object.assign(e,{t:t||k,d:k=='Label'?'':d,cb:cbBody,ca});
+  if(tr)e.tr=1;if(dr)e.dr=1;
+  if(av)ev[av[1]]=e;const idm=/^\s*(["'])([^"']+)\1\s*,\s*\{/.exec(a);if(idm)ev[idm[2]]=e;
+  n++;
+  if(/Right$/.test(rv))qa.push(e);else(cm[rv.split('.').pop()]||tabFor(rv).ch[0]).el.push(e);
+ }
+ const oc=/([\w.]+)\s*:\s*OnChanged\s*\(/g;let x;
+ while(x=oc.exec(src)){const o=x.index+x[0].length-1,c=mc(src,o),a=src.slice(o+1,c),e=ev[x[1].split('.').pop()];
+  if(!e)continue;const fm=/\bfunction\s*\(([^)]*)\)/.exec(a);
+  if(fm&&!e.cb){e.cb=ded(body(a,fm.index+fm[0].length));e.ca=fm[1].split(',')[0].trim()}
+  stmt(x.index,c);oc.lastIndex=c+1}
+ if(lv){const L=lv.replace(/\./g,'\\.');
+  // the library loader: loadstring(game:HttpGet("..."))() may span several lines
+  for(const mm of src.matchAll(new RegExp('^[ \\t]*(?:local[ \\t]+)?'+L+'[ \\t]*=[ \\t]*loadstring[ \\t]*\\(','gm'))){const c=mc(src,mm.index+mm[0].length-1);let e=c+1;const tl=/^\s*\(\s*\)/.exec(src.slice(e));if(tl)e+=tl[0].length;rm.push([mm.index,e+eol(e-1),''])}
+  for(const mm of src.matchAll(new RegExp('^[ \\t]*'+L+'\\s*[:.]\\s*\\w+\\s*\\(','gm'))){const c=mc(src,mm.index+mm[0].length-1);rm.push([mm.index,c+1+eol(c),''])}}
+ for(const mm of src.matchAll(/^[ \t]*[\w.]+[:.]SetAccent\s*\(/gm)){const o=mm.index+mm[0].length-1,c=mc(src,o),h=hex(src.slice(o+1,c));if(h){ac=h;rm.push([mm.index,c+1+eol(c),''])}}
+ for(const mm of src.matchAll(/^[ \t]*[\w.]+[:.]CreateSettingsTab\s*\(/gm)){const c=mc(src,mm.index+mm[0].length-1);rm.push([mm.index,c+1+eol(c),''])}
+ if(!n&&!ts.length)return null;
+ if(!ts.length)nt('Main');
+ // unrolled blocks that now only hold their leftover locals are dropped
+ for(const s of SY){const inner=cut(s[0]+OPEN.length,s[1]);if(onlyLocals(inner)){const ls=src.lastIndexOf('\n',s[0]-1)+1;rm.push([ls,s[1]+CLOSE.length+eol(s[1]+CLOSE.length-1),''])}}
+ rm.sort((p,q)=>p[0]-q[0]||q[1]-p[1]);let p0='',ps=0;
+ for(const r of rm){if(r[0]<ps)continue;p0+=src.slice(ps,r[0])+r[2];ps=r[1]}
+ const q0=src.slice(ps),cbs=ts.flatMap(t=>t.ch.flatMap(c=>c.el)).concat(qa).map(e=>e.cb+' '+(e.x||[]).join(' ')).join('\n'),al=p0+q0+cbs;
+ const cl=t=>t.replace(/^[ \t]*local[ \t]+(\w+)[ \t]*=[ \t]*__stub[ \t]*\n?/gm,(s,v)=>(al.match(new RegExp('\\b'+v+'\\b','g'))||[]).length>1?s:'').replace(/[ \t]+\n/g,'\n').replace(/\n{3,}/g,'\n\n').trim().replace(/^([ \t]*)(Window[:.]\w+\(.*\))[ \t]*$/gm,(s,i,c)=>wv=='Window'&&lv!='SAR'&&c.split('(').length==c.split(')').length?`${i}pcall(function() ${c} end)`:s);
+ let P=cl(p0),Q=cl(q0);const sv=[lv,wv].filter(v=>v&&!/^(SAR|Window)$/.test(v)&&/^\w+$/.test(v)&&new RegExp('\\b'+v+'\\b').test(P+Q+cbs));
+ if((sv.length||/__stub/.test(P+Q+cbs))&&!/local __stub\b/.test(P))P=['local __stub = setmetatable({}, {__index = function(t) return t end, __call = function(t) return t end})',...sv.map(v=>`local ${v} = __stub`)].join('\n')+(P?'\n\n'+P:'');
+ S.pre=P;S.post=Q;
+ ts.forEach(t=>delete t._f);S.tabs=ts;S.q=qa;S.ti=0;S.ci=0;S.sel=-1;S.qm=false;
+ if(wt)S.w.title=wt;if(ws)S.w.sub=ws;
+ if(wth){if(!T[wth]&&isSAR)T[wth]=T.Midnight.slice();if(T[wth]){S.w.theme=wth;S.w.accent=''}}
+ S.w.x=wx;if(ac)S.w.accent=ac;
+ if(/CreateSettingsTab/.test(src))S.w.settings=true;else if(/SAR:CreateWindow/.test(src))S.w.settings=false;
+ return{lib:(LIBS.find(l=>l[1].test(src0))||['unknown library'])[0],n,nd}}
+
+/* ---------- wiring ---------- */
+function themes(){$('#th').innerHTML=Object.keys(T).map(k=>`<option>${esc(k)}</option>`).join('')}
+function syncInputs(){themes();document.querySelectorAll('[data-p]').forEach(e=>e.value=S[e.dataset.p]||'');document.querySelectorAll('[data-w]').forEach(e=>{const v=S.w[e.dataset.w];e.type=='checkbox'?e.checked=!!v:e.value=Array.isArray(v)?v.join(',\n'):(v||'')});$('#ac').value=S.w.accent||(T[S.w.theme]||T.Dark)[3]}
+let lt;
+function lsync(){clearTimeout(lt);lt=setTimeout(()=>{
+ const k={ti:S.ti,ci:S.ci,sel:S.sel,qm:S.qm};let r;try{r=conv($('#out').value)}catch(e){return}if(!r)return;
+ S.ti=Math.min(k.ti,S.tabs.length-1);S.ci=Math.min(k.ci,tab().ch.length-1);S.qm=k.qm;S.sel=els().length>k.sel?k.sel:-1;
+ syncInputs();draw(true);props();side()},350)}
+function run(){
+ const mm=$('#cmsg');let r;
+ try{r=conv($('#src').value)}catch(e){console.error(e);mm.textContent='Could not read that script. Check it for a missing end or bracket and try again.';return}
+ if(!r){mm.textContent='Nothing recognised. The script needs tabs or elements from a supported library.';return}
+ mm.textContent=`Detected ${r.lib}: ${S.tabs.length} tab(s), ${r.n} element(s)${S.q.length?', '+S.q.length+' quick action(s)':''}. Edit anything below.${(S.pre||S.post)?' Your helper code was kept in the Script code boxes.':''}${r.nd?` ${r.nd} element(s) built from runtime data were left in your script code.`:''}`;
+ syncInputs();full();$('#build').scrollIntoView({behavior:'smooth'})}
+$('#src').addEventListener('paste',()=>setTimeout(run,0));
+$('#adds').innerHTML=K.map(k=>`<button class="b" data-a="add" data-k="${k}">+ ${k}</button>`).join('');
+$('#src').value='';$('#cmsg').textContent='';
+syncInputs();
+full();
+addEventListener('pageshow',e=>{if(e.persisted)location.reload()});
+</script>
+</body>
+</html>
