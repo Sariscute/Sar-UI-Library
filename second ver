@@ -13,6 +13,10 @@
     Window.Right:Button({ Title = "Quick action", Callback = function() end })
     Window:CreateSettingsTab()
 
+    CreateWindow options (extra):
+        LoadingScreen = false   skip the loading screen
+        LoadingTime = 2.8       loading screen length in seconds
+
     elements (Channel, Section, Window.Left, Window.Right):
         Label, Paragraph, Button, Toggle, Slider, Dropdown, Input,
         Keybind, ColorPicker, Divider, Section
@@ -2413,6 +2417,261 @@ local function removeOld(name)
     end
 end
 
+---------------------------------------------------------------- loading screen
+
+-- { status text, progress target, share of the total time }
+local LOAD_STEPS = {
+    { "initializing core", 0.12, 0.10 },
+    { "loading themes", 0.30, 0.16 },
+    { "building window", 0.50, 0.20 },
+    { "hooking elements", 0.68, 0.16 },
+    { "syncing config", 0.86, 0.18 },
+    { "finishing up", 0.96, 0.12 },
+    { "ready", 1, 0.08 },
+}
+
+-- lucide "tornado" icon drawn from 5 rounded bars
+-- win = nil  -> color is a plain Color3
+-- win = self -> color is a theme key like "AccentText"
+local TORNADO = { { 3, 21, 4 }, { 6, 18, 8 }, { 9, 19, 12 }, { 10, 16, 16 }, { 9, 11, 20 } }
+
+local function tornadoIcon(win, parent, size, color)
+    local s = size / 24
+    local box = create(nil, "Frame", {
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.fromScale(0.5, 0.5),
+        Size = UDim2.fromOffset(size, size),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        Parent = parent,
+    })
+    for _, l in ipairs(TORNADO) do
+        local props = {
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            Position = UDim2.fromOffset((l[1] + l[2]) / 2 * s, l[3] * s),
+            Size = UDim2.fromOffset((l[2] - l[1] + 2) * s, 2 * s),
+            BorderSizePixel = 0,
+            Parent = box,
+        }
+        local b
+        if win then
+            b = create(win, "Frame", props, { BackgroundColor3 = color })
+        else
+            props.BackgroundColor3 = color
+            b = create(nil, "Frame", props)
+        end
+        corner(b, s)
+    end
+    return box
+end
+
+local function playLoader(opts, theme)
+    removeOld("SAR_UI_Loader")
+
+    local total = math.max(tonumber(opts.LoadingTime) or 2.8, 0.8)
+    local accent = theme.Accent
+    local alive = true
+
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "SAR_UI_Loader"
+    gui.IgnoreGuiInset = true
+    mountGui(gui)
+    gui.DisplayOrder = 1001
+
+    -- dim backdrop
+    local dim = create(nil, "Frame", {
+        Size = UDim2.fromScale(1, 1),
+        BackgroundColor3 = Color3.new(0, 0, 0),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        Parent = gui,
+    })
+    tween(dim, { BackgroundTransparency = 0.45 }, 0.3)
+
+    -- card
+    local card = create(nil, "CanvasGroup", {
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.fromScale(0.5, 0.5),
+        Size = UDim2.fromOffset(340, 140),
+        BackgroundColor3 = theme.Topbar,
+        BorderSizePixel = 0,
+        GroupTransparency = 1,
+        Parent = gui,
+    })
+    corner(card, 8)
+    local cardStroke = Instance.new("UIStroke")
+    cardStroke.Color = theme.Outline
+    cardStroke.Thickness = 1
+    cardStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    cardStroke.Parent = card
+    local scale = Instance.new("UIScale")
+    scale.Scale = 0.9
+    scale.Parent = card
+
+    -- ripple behind the logo (loops)
+    local ripple = create(nil, "Frame", {
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.fromOffset(40, 40),
+        Size = UDim2.fromOffset(40, 40),
+        BackgroundColor3 = accent,
+        BackgroundTransparency = 0.55,
+        BorderSizePixel = 0,
+        Parent = card,
+    })
+    corner(ripple, 8)
+
+    -- logo (tornado icon)
+    local logo = create(nil, "Frame", {
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.fromOffset(40, 40),
+        Size = UDim2.fromOffset(40, 40),
+        BackgroundColor3 = accent,
+        BorderSizePixel = 0,
+        Rotation = -90,
+        Parent = card,
+    })
+    corner(logo, 8)
+    tornadoIcon(nil, logo, 26, theme.AccentText)
+
+    -- title + version pill
+    textLabel(nil, {
+        Text = opts.Title or "SAR UI",
+        Font = FONT_BOLD,
+        TextSize = 20,
+        TextColor3 = theme.Text,
+        TextTruncate = Enum.TextTruncate.AtEnd,
+        Size = UDim2.new(1, -170, 0, 22),
+        Position = UDim2.fromOffset(72, 19),
+        Parent = card,
+    })
+    textLabel(nil, {
+        Text = "loading interface",
+        Font = FONT_REG,
+        TextSize = 13,
+        TextColor3 = theme.SubText,
+        Size = UDim2.new(1, -170, 0, 16),
+        Position = UDim2.fromOffset(72, 42),
+        Parent = card,
+    })
+    local pill = create(nil, "Frame", {
+        AnchorPoint = Vector2.new(1, 0),
+        Position = UDim2.new(1, -20, 0, 22),
+        Size = UDim2.new(0, 0, 0, 18),
+        AutomaticSize = Enum.AutomaticSize.X,
+        BackgroundColor3 = theme.Element,
+        BorderSizePixel = 0,
+        Parent = card,
+    })
+    corner(pill, 4)
+    pad(pill, 7, 0, 7, 0)
+    textLabel(nil, {
+        Text = "v" .. SAR.Version,
+        TextSize = 12,
+        TextColor3 = theme.SubText,
+        Size = UDim2.new(0, 0, 1, 0),
+        AutomaticSize = Enum.AutomaticSize.X,
+        Parent = pill,
+    })
+
+    -- status + percent
+    local status = textLabel(nil, {
+        Text = "",
+        Font = FONT_REG,
+        TextSize = 13,
+        TextColor3 = theme.SubText,
+        Size = UDim2.new(1, -90, 0, 16),
+        Position = UDim2.fromOffset(20, 84),
+        Parent = card,
+    })
+    local percent = textLabel(nil, {
+        Text = "0%",
+        Font = FONT_BOLD,
+        TextSize = 13,
+        TextColor3 = theme.Text,
+        TextXAlignment = Enum.TextXAlignment.Right,
+        AnchorPoint = Vector2.new(1, 0),
+        Size = UDim2.fromOffset(60, 16),
+        Position = UDim2.new(1, -20, 0, 84),
+        Parent = card,
+    })
+
+    -- progress bar
+    local track = create(nil, "Frame", {
+        Position = UDim2.fromOffset(20, 108),
+        Size = UDim2.new(1, -40, 0, 6),
+        BackgroundColor3 = theme.Track,
+        BorderSizePixel = 0,
+        Parent = card,
+    })
+    corner(track, 3)
+    local fill = create(nil, "Frame", {
+        Size = UDim2.fromScale(0, 1),
+        BackgroundColor3 = Color3.new(1, 1, 1),
+        BorderSizePixel = 0,
+        Parent = track,
+    })
+    corner(fill, 3)
+    local shimmer = Instance.new("UIGradient")
+    shimmer.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, accent),
+        ColorSequenceKeypoint.new(0.5, accent:Lerp(Color3.new(1, 1, 1), 0.45)),
+        ColorSequenceKeypoint.new(1, accent),
+    })
+    shimmer.Offset = Vector2.new(-1, 0)
+    shimmer.Parent = fill
+
+    -- intro
+    tween(card, { GroupTransparency = 0 }, 0.25)
+    tween(scale, { Scale = 1 }, 0.35, Enum.EasingStyle.Back)
+    tween(logo, { Rotation = 0 }, 0.5, Enum.EasingStyle.Back)
+
+    -- looping bits (ripple pulse + bar shimmer)
+    task.spawn(function()
+        while alive and gui.Parent do
+            ripple.Size = UDim2.fromOffset(40, 40)
+            ripple.BackgroundTransparency = 0.55
+            tween(ripple, { Size = UDim2.fromOffset(68, 68), BackgroundTransparency = 1 }, 0.9)
+            task.wait(1)
+        end
+    end)
+    task.spawn(function()
+        while alive and gui.Parent do
+            shimmer.Offset = Vector2.new(-1, 0)
+            tween(shimmer, { Offset = Vector2.new(1, 0) }, 0.9, Enum.EasingStyle.Linear)
+            task.wait(0.9)
+        end
+    end)
+
+    local conn = RunService.RenderStepped:Connect(function()
+        percent.Text = math.floor(fill.Size.X.Scale * 100 + 0.5) .. "%"
+    end)
+
+    task.wait(0.35)
+
+    -- fake steps
+    for _, step in ipairs(LOAD_STEPS) do
+        status.Text = step[1]
+        status.TextTransparency = 1
+        tween(status, { TextTransparency = 0 }, 0.15)
+        local d = total * step[3]
+        tween(fill, { Size = UDim2.fromScale(step[2], 1) }, d, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
+        task.wait(d)
+    end
+
+    -- done: turn green for a beat, then fade out
+    status.TextColor3 = theme.Success
+    percent.Text = "100%"
+    task.wait(0.3)
+
+    alive = false
+    conn:Disconnect()
+    tween(card, { GroupTransparency = 1 }, 0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+    tween(scale, { Scale = 1.08 }, 0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+    tween(dim, { BackgroundTransparency = 1 }, 0.3)
+    task.wait(0.32)
+    gui:Destroy()
+end
+
 ---------------------------------------------------------------- SAR:CreateWindow
 
 function SAR:CreateWindow(opts)
@@ -2445,6 +2704,15 @@ function SAR:CreateWindow(opts)
 
     local guiName = "SAR_UI"
     removeOld(guiName)
+
+    -- loading screen (visual only), skip with LoadingScreen = false
+    if opts.LoadingScreen ~= false then
+        local ok = pcall(playLoader, opts, self.Theme)
+        if not ok then
+            removeOld("SAR_UI_Loader") -- never let the loader block the real window
+        end
+    end
+
     local gui = Instance.new("ScreenGui")
     gui.Name = guiName
     mountGui(gui)
@@ -2515,14 +2783,7 @@ function SAR:CreateWindow(opts)
             Parent = leftGroup,
         }, { BackgroundColor3 = "Accent" })
         corner(logo, 4)
-        textLabel(self, {
-            Text = "S",
-            Font = FONT_BOLD,
-            TextSize = 15,
-            TextXAlignment = Enum.TextXAlignment.Center,
-            Size = UDim2.fromScale(1, 1),
-            Parent = logo,
-        }, "AccentText")
+        tornadoIcon(self, logo, 16, "AccentText")
     end
 
     self._titleLabel = textLabel(self, {
@@ -2895,17 +3156,16 @@ function SAR:CreateWindow(opts)
     -- floating open button (shows when the window is hidden)
     local openBtn = create(self, "TextButton", {
         Name = "OpenButton",
-        Text = "S",
-        Font = FONT_BOLD,
-        TextSize = 20,
+        Text = "",
         AutoButtonColor = false,
         Size = UDim2.fromOffset(42, 42),
         Position = UDim2.new(0, 20, 0.5, -21),
         BorderSizePixel = 0,
         Visible = false,
         Parent = gui,
-    }, { BackgroundColor3 = "Accent", TextColor3 = "AccentText" })
+    }, { BackgroundColor3 = "Accent" })
     corner(openBtn, 6)
+    tornadoIcon(self, openBtn, 24, "AccentText")
     stroke(self, openBtn, "Outline")
     self._openButton = openBtn
 
