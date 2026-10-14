@@ -1,7 +1,7 @@
 --[[
     SAR UI - custom Roblox Luau UI library
 
-    left rail = tabs, middle = channels + pages + profile, right rail = quick buttons
+    left rail = search + tabs, middle = channels + pages + profile, right rail = quick buttons
 
     local SAR = loadstring(readfile("SAR_UI.lua"))()
     local Window = SAR:CreateWindow({ Title = "SAR UI" })
@@ -22,13 +22,16 @@
         Keybind, ColorPicker, Divider, Section
 
     window:
-        Tab, SelectTab, Notify, Dialog, Toggle, SetTheme, SetAccent,
+        Tab, SelectTab, Search, Notify, Dialog, Toggle, SetTheme, SetAccent,
         SetTransparency, SetTitle, SetProfile, SetProfileVisible,
         SaveConfig, LoadConfig, DeleteConfig, ListConfigs,
         CreateSettingsTab, Destroy
+
+    SetProfile fields:
+        DisplayName, Username, UserId, Game   (Game overrides the auto detected game name)
 ]]
 
-local SAR = { Version = "1.2.0", Windows = {} }
+local SAR = { Version = "1.3.0", Windows = {} }
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
@@ -37,6 +40,7 @@ local RunService = game:GetService("RunService")
 local HttpService = game:GetService("HttpService")
 local CoreGui = game:GetService("CoreGui")
 local Stats = game:GetService("Stats")
+local MarketplaceService = game:GetService("MarketplaceService")
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -44,9 +48,9 @@ local FONT_REG = Enum.Font.Ubuntu
 local FONT_MED = Enum.Font.Ubuntu
 local FONT_BOLD = Enum.Font.Ubuntu
 
--- bottom of the middle column: profile card (54) + gaps + the SAR UI footer
+-- bottom of the middle column: profile card (68) + gaps + the SAR UI footer
 local FOOTER_H = 24
-local PROFILE_H = 90
+local PROFILE_H = 104
 
 ---------------------------------------------------------------- themes
 
@@ -1831,6 +1835,55 @@ function Window:SelectTab(tab)
     tab:_visual()
 end
 
+-- filters the tab list by tab name, channel name or any element text inside a tab.
+-- jumps to the first matching tab when the current one doesn't match,
+-- and shows "No results" when nothing matches. empty query restores everything.
+function Window:Search(query)
+    query = string.lower(query or "")
+    local first, currentMatches = nil, false
+
+    for _, tab in ipairs(self.Tabs) do
+        local show = query == ""
+        if not show then
+            if string.find(string.lower(tab.Title), query, 1, true) then
+                show = true
+            else
+                for _, ch in ipairs(tab.Channels) do
+                    if string.find(string.lower(ch.Title), query, 1, true) then
+                        show = true
+                        break
+                    end
+                    for _, d in ipairs(ch._page:GetDescendants()) do
+                        if d:IsA("TextLabel") and string.find(string.lower(d.Text), query, 1, true) then
+                            show = true
+                            break
+                        end
+                    end
+                    if show then
+                        break
+                    end
+                end
+            end
+        end
+        tab._button.Visible = show
+        if show then
+            first = first or tab
+            if tab == self.SelectedTab then
+                currentMatches = true
+            end
+        end
+    end
+
+    if self._noResults then
+        self._noResults.Visible = query ~= "" and first == nil
+    end
+
+    -- only jump if the tab you're on doesn't match, so the page doesn't flicker while typing
+    if query ~= "" and first and not currentMatches then
+        self:SelectTab(first)
+    end
+end
+
 ---------------------------------------------------------------- notify / dialog
 
 function Window:Notify(opts)
@@ -2115,6 +2168,9 @@ function Window:SetProfile(info)
     end
     if info.Username then
         self._profileUser.Text = "@" .. info.Username
+    end
+    if info.Game then
+        self._profileGame.Text = "Playing: " .. tostring(info.Game)
     end
     if info.UserId then
         task.spawn(function()
@@ -2918,7 +2974,12 @@ function SAR:CreateWindow(opts)
         Parent = main,
     })
 
+    -- left rail gets a search box on top (pushes the title + tab list down)
     local function buildRail(side, width, titleText)
+        local isLeft = side == "Left"
+        local titleY = isLeft and 46 or 12
+        local scrollY = isLeft and 68 or 34
+
         local rail = create(self, "Frame", {
             Name = side .. "Rail",
             Size = UDim2.new(0, width, 1, 0),
@@ -2938,20 +2999,71 @@ function SAR:CreateWindow(opts)
             line.AnchorPoint = Vector2.new(1, 0)
             line.Position = UDim2.new(1, 0, 0, 0)
         end
+
+        if isLeft then
+            local field = create(self, "Frame", {
+                Name = "Search",
+                Size = UDim2.new(1, -16, 0, 28),
+                Position = UDim2.fromOffset(8, 10),
+                BorderSizePixel = 0,
+                Parent = rail,
+            }, { BackgroundColor3 = "Field" })
+            corner(field, 5)
+            stroke(self, field, "Outline")
+
+            -- magnifier drawn from a ring + a bar
+            local icon = create(self, "Frame", {
+                BackgroundTransparency = 1,
+                AnchorPoint = Vector2.new(0, 0.5),
+                Position = UDim2.new(0, 9, 0.5, 0),
+                Size = UDim2.fromOffset(14, 14),
+                Parent = field,
+            })
+            local ring = create(self, "Frame", {
+                BackgroundTransparency = 1,
+                Position = UDim2.fromOffset(0, 0),
+                Size = UDim2.fromOffset(9, 9),
+                BorderSizePixel = 0,
+                Parent = icon,
+            })
+            corner(ring, 5)
+            stroke(self, ring, "SubText", 1.5)
+            bar(self, icon, 5, 2, 11, 11, 45, "SubText")
+
+            local box = create(self, "TextBox", {
+                Text = "",
+                PlaceholderText = "Search...",
+                ClearTextOnFocus = false,
+                Font = FONT_REG,
+                TextSize = 13,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                BackgroundTransparency = 1,
+                BorderSizePixel = 0,
+                ClipsDescendants = true,
+                Size = UDim2.new(1, -36, 1, 0),
+                Position = UDim2.new(0, 28, 0, 0),
+                Parent = field,
+            }, { TextColor3 = "Text", PlaceholderColor3 = "SubText" })
+            box:GetPropertyChangedSignal("Text"):Connect(function()
+                self:Search(box.Text)
+            end)
+            self._searchBox = box
+        end
+
         textLabel(self, {
             Text = titleText,
             Font = FONT_BOLD,
             TextSize = 13,
             Size = UDim2.new(1, -28, 0, 16),
-            Position = UDim2.new(0, 14, 0, 12),
+            Position = UDim2.new(0, 14, 0, titleY),
             Parent = rail,
         }, "SubText")
         local scroll = create(self, "ScrollingFrame", {
             Name = "Scroll",
             BackgroundTransparency = 1,
             BorderSizePixel = 0,
-            Position = UDim2.new(0, 0, 0, 34),
-            Size = UDim2.new(1, 0, 1, -34),
+            Position = UDim2.new(0, 0, 0, scrollY),
+            Size = UDim2.new(1, 0, 1, -scrollY),
             ScrollBarThickness = 2,
             CanvasSize = UDim2.new(),
             AutomaticCanvasSize = Enum.AutomaticSize.Y,
@@ -2959,6 +3071,21 @@ function SAR:CreateWindow(opts)
         }, { ScrollBarImageColor3 = "Accent" })
         pad(scroll, 8, 4, 8, 24)
         list(scroll, 6)
+
+        if isLeft then
+            self._noResults = textLabel(self, {
+                Name = "NoResults",
+                Text = "No results",
+                Font = FONT_REG,
+                TextSize = 13,
+                TextXAlignment = Enum.TextXAlignment.Center,
+                Size = UDim2.new(1, -16, 0, 20),
+                Position = UDim2.new(0, 8, 0, scrollY + 8),
+                Visible = false,
+                Parent = rail,
+            }, "SubText")
+        end
+
         return rail, scroll
     end
 
@@ -3005,17 +3132,17 @@ function SAR:CreateWindow(opts)
     })
     self._pages = pages
 
-    -- roblox profile card
+    -- roblox profile card (name, username, current game, fps/ping)
     local profile = create(self, "Frame", {
         Name = "Profile",
         AnchorPoint = Vector2.new(0.5, 1),
         Position = UDim2.new(0.5, 0, 1, -(FOOTER_H + 2)),
-        Size = UDim2.new(1, -28, 0, 54),
+        Size = UDim2.new(1, -28, 0, 68),
         BorderSizePixel = 0,
         Parent = mid,
     }, { BackgroundColor3 = "Element" })
     local pc = Instance.new("UISizeConstraint")
-    pc.MaxSize = Vector2.new(380, 54)
+    pc.MaxSize = Vector2.new(380, 68)
     pc.Parent = profile
     corner(profile, 6)
     stroke(self, profile, "Outline")
@@ -3046,9 +3173,18 @@ function SAR:CreateWindow(opts)
         TextSize = 13,
         TextTruncate = Enum.TextTruncate.AtEnd,
         Size = UDim2.new(1, -140, 0, 14),
-        Position = UDim2.new(0, 56, 0, 28),
+        Position = UDim2.new(0, 56, 0, 27),
         Parent = profile,
     }, "SubText")
+    local gameLabel = textLabel(self, {
+        Text = "Playing: " .. game.Name,
+        Font = FONT_MED,
+        TextSize = 12,
+        TextTruncate = Enum.TextTruncate.AtEnd,
+        Size = UDim2.new(1, -140, 0, 14),
+        Position = UDim2.new(0, 56, 0, 44),
+        Parent = profile,
+    }, "Accent")
     local statsLabel = textLabel(self, {
         Text = "-- fps\n-- ms",
         Font = FONT_MED,
@@ -3065,6 +3201,17 @@ function SAR:CreateWindow(opts)
     self._profileAvatar = avatar
     self._profileName = nameLabel
     self._profileUser = userLabel
+    self._profileGame = gameLabel
+
+    -- real game name from the marketplace (falls back to game.Name above)
+    task.spawn(function()
+        local ok, info = pcall(function()
+            return MarketplaceService:GetProductInfo(game.PlaceId)
+        end)
+        if ok and info and info.Name and not self._destroyed then
+            gameLabel.Text = "Playing: " .. info.Name
+        end
+    end)
 
     -- fixed footer text under the profile. plain TextLabel, no API touches it
     textLabel(self, {
