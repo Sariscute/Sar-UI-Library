@@ -24,7 +24,7 @@
         CreateSettingsTab, Destroy
 ]]
 
-local SAR = { Version = "1.1.0", Windows = {} }
+local SAR = { Version = "1.2.0", Windows = {} }
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
@@ -2033,9 +2033,32 @@ function Window:Toggle(state)
         state = not self.Visible
     end
     self.Visible = state
-    self.Main.Visible = state
+    self._toggleId = (self._toggleId or 0) + 1
+    local id = self._toggleId
+    local main, scale = self.Main, self._scale
+
     if self._openButton then
         self._openButton.Visible = (not state) and self._floating
+    end
+
+    if state then
+        -- start from "hidden" values only if the window was fully hidden
+        if not main.Visible then
+            main.GroupTransparency = 1
+            scale.Scale = 0.94
+            main.Visible = true
+        end
+        tween(main, { GroupTransparency = 0 }, 0.2, Enum.EasingStyle.Quad)
+        tween(scale, { Scale = 1 }, 0.25, Enum.EasingStyle.Quint)
+    else
+        tween(main, { GroupTransparency = 1 }, 0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+        tween(scale, { Scale = 0.94 }, 0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+        task.delay(0.17, function()
+            -- ignore if the window was opened again or destroyed meanwhile
+            if self._toggleId == id and not self._destroyed then
+                main.Visible = false
+            end
+        end)
     end
 end
 
@@ -2434,7 +2457,7 @@ function SAR:CreateWindow(opts)
         size = UDim2.fromOffset(math.min(860, vs.X - 24), math.min(540, vs.Y - 24))
     end
 
-    local main = create(self, "Frame", {
+    local main = create(self, "CanvasGroup", {
         Name = "Main",
         AnchorPoint = Vector2.new(0.5, 0.5),
         Position = UDim2.fromScale(0.5, 0.5),
@@ -2447,6 +2470,10 @@ function SAR:CreateWindow(opts)
     stroke(self, main, "Outline")
     self.Main = main
     table.insert(self._fadeFrames, main)
+
+    local scale = Instance.new("UIScale")
+    scale.Parent = main
+    self._scale = scale
 
     -- top bar
     local topbar = create(self, "Frame", {
@@ -2581,13 +2608,24 @@ function SAR:CreateWindow(opts)
     local closeBtn = topButton("close", 2, "Danger")
 
     -- drag by the top bar. the window glides to the cursor instead of snapping
+    -- keeps at least 100px of the window on screen and the top bar reachable
+    local function clampOnScreen(pos)
+        local vs = gui.AbsoluteSize
+        local sz = main.AbsoluteSize
+        local cx = pos.X.Scale * vs.X + pos.X.Offset
+        local cy = pos.Y.Scale * vs.Y + pos.Y.Offset
+        cx = math.clamp(cx, 100 - sz.X / 2, vs.X - 100 + sz.X / 2)
+        cy = math.clamp(cy, sz.Y / 2, vs.Y - 44 + sz.Y / 2)
+        return UDim2.new(pos.X.Scale, cx - pos.X.Scale * vs.X, pos.Y.Scale, cy - pos.Y.Scale * vs.Y)
+    end
+
     local dragMouse, dragStart, dragTarget
     local windowDragging = bindDrag(self, topbar, function(pos)
         local d = pos - dragMouse
-        dragTarget = UDim2.new(
+        dragTarget = clampOnScreen(UDim2.new(
             dragStart.X.Scale, dragStart.X.Offset + d.X,
             dragStart.Y.Scale, dragStart.Y.Offset + d.Y
-        )
+        ))
     end, function(pos)
         dragMouse = pos
         dragStart = main.Position
@@ -2877,10 +2915,10 @@ function SAR:CreateWindow(opts)
         if d.Magnitude > 5 then
             moved = true
         end
-        openBtn.Position = UDim2.new(
-            btnStartPos.X.Scale, btnStartPos.X.Offset + d.X,
-            btnStartPos.Y.Scale, btnStartPos.Y.Offset + d.Y
-        )
+        local vs = gui.AbsoluteSize
+        local px = math.clamp(btnStartPos.X.Scale * vs.X + btnStartPos.X.Offset + d.X, 0, vs.X - 42)
+        local py = math.clamp(btnStartPos.Y.Scale * vs.Y + btnStartPos.Y.Offset + d.Y, 0, vs.Y - 42)
+        openBtn.Position = UDim2.fromOffset(px, py)
     end, function(pos)
         btnStartMouse = pos
         btnStartPos = openBtn.Position
@@ -2929,6 +2967,11 @@ function SAR:CreateWindow(opts)
     end)
 
     table.insert(SAR.Windows, self)
+
+    -- play the open animation when the window is created
+    self.Visible = false
+    main.Visible = false
+    self:Toggle(true)
     return self
 end
 
