@@ -1,42 +1,31 @@
 --[[
-    SAR UI  -  a custom Roblox Luau UI library (WindUI-style)
+    SAR UI - custom Roblox Luau UI library
 
-    LAYOUT
-        +--------+-----------------------------+--------+
-        |  LEFT  |  # channel  # channel       | RIGHT  |
-        |  tabs  |-----------------------------|  quick |
-        |  and   |   channel content           | buttons|
-        | things |                             | and    |
-        |        |       [ roblox profile ]    | things |
-        +--------+-----------------------------+--------+
+    left rail = tabs, middle = channels + pages + profile, right rail = quick buttons
 
-    QUICK START
-        local SAR = loadstring(readfile("SAR_UI.lua"))()
-        local Window = SAR:CreateWindow({ Title = "SAR UI" })
+    local SAR = loadstring(readfile("SAR_UI.lua"))()
+    local Window = SAR:CreateWindow({ Title = "SAR UI" })
 
-        local Tab = Window:Tab({ Title = "Home", Icon = "🏠" })
-        local General = Tab:Channel("general")
-        General:Button({ Title = "Hello", Callback = function() print("hi") end })
+    local Tab = Window:Tab({ Title = "Home" })
+    local General = Tab:Channel("general")
+    General:Button({ Title = "Hello", Callback = function() end })
 
-        Window.Right:Button({ Title = "Quick action", Callback = function() end })
-        Window:CreateSettingsTab()
+    Window.Right:Button({ Title = "Quick action", Callback = function() end })
+    Window:CreateSettingsTab()
 
-    ELEMENTS (available on a Channel, a Section, Window.Left and Window.Right)
+    elements (Channel, Section, Window.Left, Window.Right):
         Label, Paragraph, Button, Toggle, Slider, Dropdown, Input,
         Keybind, ColorPicker, Divider, Section
 
-    WINDOW
-        :Tab  :SelectTab  :Notify  :Dialog  :Toggle  :SetTheme  :SetAccent
-        :SetTransparency  :SetTitle  :SetProfile  :SetProfileVisible
-        :SaveConfig  :LoadConfig  :DeleteConfig  :ListConfigs
-        :CreateSettingsTab  :Destroy
+    window:
+        Tab, SelectTab, Notify, Dialog, Toggle, SetTheme, SetAccent,
+        SetTransparency, SetTitle, SetProfile, SetProfileVisible,
+        SaveConfig, LoadConfig, DeleteConfig, ListConfigs,
+        CreateSettingsTab, Destroy
 ]]
 
-local SAR = { Version = "1.0.0", Windows = {} }
+local SAR = { Version = "1.2.0", Windows = {} }
 
---------------------------------------------------------------------------------
--- Services
---------------------------------------------------------------------------------
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
@@ -47,14 +36,16 @@ local Stats = game:GetService("Stats")
 
 local LocalPlayer = Players.LocalPlayer
 
-local FONT_REG = Enum.Font.Gotham
-local FONT_MED = Enum.Font.GothamMedium
-local FONT_BOLD = Enum.Font.GothamBold
-local PROFILE_H = 74 -- space reserved at the bottom of the middle column
+local FONT_REG = Enum.Font.Ubuntu
+local FONT_MED = Enum.Font.Ubuntu
+local FONT_BOLD = Enum.Font.Ubuntu
 
---------------------------------------------------------------------------------
--- Themes
---------------------------------------------------------------------------------
+-- bottom of the middle column: profile card (54) + gaps + the SAR UI footer
+local FOOTER_H = 24
+local PROFILE_H = 90
+
+---------------------------------------------------------------- themes
+
 local function rgb(r, g, b)
     return Color3.fromRGB(r, g, b)
 end
@@ -68,61 +59,60 @@ local function derive(base, over)
 end
 
 local Dark = {
-    Background = rgb(16, 16, 22),
-    Topbar = rgb(22, 22, 30),
-    Sidebar = rgb(19, 19, 26),
-    Panel = rgb(16, 16, 22),
-    Element = rgb(27, 27, 37),
-    ElementHover = rgb(35, 35, 48),
-    Field = rgb(20, 20, 28),
-    Track = rgb(48, 48, 64),
-    Outline = rgb(44, 44, 58),
-    Accent = rgb(124, 92, 255),
+    Background = rgb(18, 18, 20),
+    Topbar = rgb(24, 24, 27),
+    Sidebar = rgb(21, 21, 24),
+    Panel = rgb(18, 18, 20),
+    Element = rgb(30, 30, 34),
+    ElementHover = rgb(39, 39, 44),
+    Field = rgb(22, 22, 25),
+    Track = rgb(54, 54, 60),
+    Outline = rgb(46, 46, 52),
+    Accent = rgb(222, 98, 74),
     AccentText = rgb(255, 255, 255),
-    Text = rgb(235, 235, 245),
-    SubText = rgb(150, 150, 170),
-    Success = rgb(67, 200, 120),
-    Warning = rgb(245, 180, 60),
-    Danger = rgb(240, 80, 90),
+    Text = rgb(226, 226, 230),
+    SubText = rgb(138, 138, 148),
+    Success = rgb(86, 190, 120),
+    Warning = rgb(232, 176, 70),
+    Danger = rgb(224, 74, 80),
 }
 
 SAR.Themes = {
     Dark = Dark,
     Midnight = derive(Dark, {
-        Background = rgb(10, 12, 24), Topbar = rgb(14, 17, 32), Sidebar = rgb(12, 15, 28),
-        Panel = rgb(10, 12, 24), Element = rgb(20, 24, 44), ElementHover = rgb(28, 33, 58),
-        Field = rgb(14, 17, 32), Track = rgb(40, 46, 78), Outline = rgb(34, 40, 70),
-        Accent = rgb(80, 140, 255),
+        Background = rgb(11, 13, 22), Topbar = rgb(15, 18, 30), Sidebar = rgb(13, 16, 26),
+        Panel = rgb(11, 13, 22), Element = rgb(21, 25, 40), ElementHover = rgb(29, 34, 54),
+        Field = rgb(15, 18, 30), Track = rgb(42, 48, 74), Outline = rgb(35, 41, 64),
+        Accent = rgb(86, 140, 230),
     }),
     Light = derive(Dark, {
-        Background = rgb(244, 245, 250), Topbar = rgb(255, 255, 255), Sidebar = rgb(250, 250, 254),
-        Panel = rgb(244, 245, 250), Element = rgb(255, 255, 255), ElementHover = rgb(238, 240, 248),
-        Field = rgb(240, 242, 248), Track = rgb(205, 208, 222), Outline = rgb(220, 223, 235),
-        Accent = rgb(110, 80, 240), Text = rgb(28, 28, 40), SubText = rgb(110, 112, 130),
+        Background = rgb(240, 240, 243), Topbar = rgb(250, 250, 252), Sidebar = rgb(246, 246, 249),
+        Panel = rgb(240, 240, 243), Element = rgb(252, 252, 253), ElementHover = rgb(235, 235, 240),
+        Field = rgb(236, 236, 241), Track = rgb(204, 204, 212), Outline = rgb(219, 219, 227),
+        Accent = rgb(214, 86, 62), Text = rgb(30, 30, 36), SubText = rgb(108, 108, 120),
     }),
     Rose = derive(Dark, {
-        Background = rgb(22, 14, 18), Topbar = rgb(30, 19, 24), Sidebar = rgb(26, 16, 21),
-        Panel = rgb(22, 14, 18), Element = rgb(38, 24, 30), ElementHover = rgb(50, 32, 40),
-        Field = rgb(28, 18, 23), Track = rgb(70, 46, 56), Outline = rgb(64, 42, 52),
-        Accent = rgb(255, 92, 140),
+        Background = rgb(22, 15, 18), Topbar = rgb(29, 20, 24), Sidebar = rgb(25, 17, 21),
+        Panel = rgb(22, 15, 18), Element = rgb(36, 25, 30), ElementHover = rgb(47, 33, 39),
+        Field = rgb(27, 19, 23), Track = rgb(66, 47, 55), Outline = rgb(60, 43, 51),
+        Accent = rgb(232, 96, 134),
     }),
     Emerald = derive(Dark, {
-        Background = rgb(12, 20, 17), Topbar = rgb(16, 28, 23), Sidebar = rgb(14, 24, 20),
-        Panel = rgb(12, 20, 17), Element = rgb(21, 35, 29), ElementHover = rgb(28, 46, 38),
-        Field = rgb(15, 26, 21), Track = rgb(40, 66, 55), Outline = rgb(36, 60, 50),
-        Accent = rgb(52, 211, 153),
+        Background = rgb(13, 20, 18), Topbar = rgb(17, 27, 24), Sidebar = rgb(15, 23, 21),
+        Panel = rgb(13, 20, 18), Element = rgb(22, 34, 30), ElementHover = rgb(29, 44, 38),
+        Field = rgb(16, 25, 22), Track = rgb(42, 64, 56), Outline = rgb(37, 58, 50),
+        Accent = rgb(60, 190, 140),
     }),
     Crimson = derive(Dark, {
         Background = rgb(18, 12, 12), Topbar = rgb(26, 16, 16), Sidebar = rgb(22, 14, 14),
         Panel = rgb(18, 12, 12), Element = rgb(32, 21, 21), ElementHover = rgb(44, 28, 28),
         Field = rgb(24, 16, 16), Track = rgb(66, 42, 42), Outline = rgb(58, 38, 38),
-        Accent = rgb(235, 64, 64),
+        Accent = rgb(220, 58, 58),
     }),
 }
 
---------------------------------------------------------------------------------
--- Small helpers
---------------------------------------------------------------------------------
+---------------------------------------------------------------- helpers
+
 local function norm(o)
     if type(o) == "string" then
         return { Title = o }
@@ -143,16 +133,14 @@ local function tween(obj, props, time, style, dir)
     return ok and tw or nil
 end
 
+-- runs a user callback on its own thread, errors are swallowed on purpose
 local function fire(callback, ...)
     if type(callback) ~= "function" then
         return
     end
     local args = table.pack(...)
     task.spawn(function()
-        local ok, err = pcall(callback, table.unpack(args, 1, args.n))
-        if not ok then
-            warn("[SAR UI] callback error: " .. tostring(err))
-        end
+        pcall(callback, table.unpack(args, 1, args.n))
     end)
 end
 
@@ -179,9 +167,6 @@ local function decodeValue(v)
     return v
 end
 
---------------------------------------------------------------------------------
--- Class declarations
---------------------------------------------------------------------------------
 local Window = {}
 Window.__index = Window
 
@@ -197,9 +182,8 @@ Tab.__index = Tab
 local Element = {}
 Element.__index = Element
 
---------------------------------------------------------------------------------
--- Window internals: theming, connections, flags
---------------------------------------------------------------------------------
+---------------------------------------------------------------- window internals
+
 function Window:_bind(inst, map)
     local rec = self._themed[inst]
     if not rec then
@@ -251,9 +235,8 @@ function Window:_applyTheme()
     end
 end
 
---------------------------------------------------------------------------------
--- Instance helpers
---------------------------------------------------------------------------------
+---------------------------------------------------------------- instance helpers
+
 local function create(win, class, props, tmap)
     local inst = Instance.new(class)
     local parent
@@ -275,7 +258,7 @@ end
 
 local function corner(parent, radius)
     local c = Instance.new("UICorner")
-    c.CornerRadius = typeof(radius) == "UDim" and radius or UDim.new(0, radius or 8)
+    c.CornerRadius = typeof(radius) == "UDim" and radius or UDim.new(0, radius or 5)
     c.Parent = parent
     return c
 end
@@ -325,12 +308,45 @@ local function textLabel(win, props, colorKey)
     props.BackgroundTransparency = 1
     props.BorderSizePixel = 0
     props.Font = props.Font or FONT_MED
-    props.TextSize = props.TextSize or 13
+    props.TextSize = props.TextSize or 14
     props.TextXAlignment = props.TextXAlignment or Enum.TextXAlignment.Left
     return create(win, "TextLabel", props, colorKey and { TextColor3 = colorKey } or nil)
 end
 
--- Icon can be an asset id (number / "123" / "rbxassetid://123") or a text glyph / emoji.
+-- small thin bar, used to draw the icons below (no images or emoji needed)
+local function bar(win, parent, w, h, x, y, rot, colorKey)
+    return create(win, "Frame", {
+        Size = UDim2.fromOffset(w, h),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.fromOffset(x, y),
+        Rotation = rot,
+        BorderSizePixel = 0,
+        Parent = parent,
+    }, { BackgroundColor3 = colorKey })
+end
+
+-- "v" shaped arrow, rotate the returned frame for the other directions
+local function chevron(win, props, colorKey)
+    props.BackgroundTransparency = 1
+    props.BorderSizePixel = 0
+    props.Size = props.Size or UDim2.fromOffset(12, 12)
+    local box = create(win, "Frame", props)
+    bar(win, box, 6, 2, 4, 6, 45, colorKey)
+    bar(win, box, 6, 2, 8, 6, -45, colorKey)
+    return box
+end
+
+local function checkMark(win, props, colorKey)
+    props.BackgroundTransparency = 1
+    props.BorderSizePixel = 0
+    props.Size = UDim2.fromOffset(12, 12)
+    local box = create(win, "Frame", props)
+    bar(win, box, 4, 2, 3.25, 7.75, 45, colorKey)
+    bar(win, box, 8, 2, 7.25, 6.25, -45, colorKey)
+    return box
+end
+
+-- tab icon: asset id (number / "123" / "rbxassetid://123") or a short text glyph
 local function makeIcon(win, props, icon)
     if icon == nil or icon == "" then
         return nil
@@ -347,7 +363,7 @@ local function makeIcon(win, props, icon)
     end
     props.Text = s
     props.Font = props.Font or FONT_BOLD
-    props.TextSize = props.TextSize or 15
+    props.TextSize = props.TextSize or 16
     return create(win, "TextLabel", props)
 end
 
@@ -362,7 +378,7 @@ local function setIconColor(icon, color)
     end
 end
 
--- Generic drag helper. onStart may return false to cancel the drag.
+-- onStart can return false to cancel the drag, returns a function telling if a drag is active
 local function bindDrag(win, hit, onMove, onStart)
     local dragging = false
     hit.InputBegan:Connect(function(input)
@@ -403,9 +419,8 @@ local function hoverEffect(win, button, base, over)
     end)
 end
 
---------------------------------------------------------------------------------
--- Element base (shared by every card-style element)
---------------------------------------------------------------------------------
+---------------------------------------------------------------- element base
+
 function Element:SetTitle(text)
     self._title.Text = text or ""
     self._title.Visible = (text or "") ~= ""
@@ -419,7 +434,7 @@ function Element:SetDesc(text)
         end
         self._desc = textLabel(self.Window, {
             Font = FONT_REG,
-            TextSize = 12,
+            TextSize = 13,
             TextWrapped = true,
             Size = UDim2.new(1, 0, 0, 14),
             AutomaticSize = Enum.AutomaticSize.Y,
@@ -449,8 +464,7 @@ function Element:Destroy()
     self.Frame:Destroy()
 end
 
--- Builds the standard card: header row (title/desc on the left, control on the right)
--- plus optional extra rows below it (LayoutOrder >= 2).
+-- standard card: header row (text left, control right) + extra rows below (LayoutOrder >= 2)
 local function newCard(container, opts)
     local win = container.Window
     local clickable = opts.Clickable == true
@@ -467,7 +481,7 @@ local function newCard(container, opts)
         card.Text = ""
         card.AutoButtonColor = false
     end
-    corner(card, 8)
+    corner(card, 5)
     stroke(win, card, "Outline")
     pad(card, 12, 10, 12, 10)
     list(card, 8)
@@ -530,9 +544,8 @@ local function finalize(win, el, opts, value, kind)
     end
 end
 
---------------------------------------------------------------------------------
--- Container: every element lives in a container
---------------------------------------------------------------------------------
+---------------------------------------------------------------- container
+
 function Container:_next()
     self._order += 1
     return self._order
@@ -542,14 +555,14 @@ local function newContainer(win, frame, class)
     return setmetatable({ Window = win, Frame = frame, _order = 0 }, class or Container)
 end
 
---== Label ======================================================================
+-- Label
 function Container:Label(opts)
     opts = norm(opts)
     local win = self.Window
     local lbl = textLabel(win, {
         Text = opts.Title or opts.Text or "",
         Font = FONT_REG,
-        TextSize = 12,
+        TextSize = 13,
         TextWrapped = true,
         Size = UDim2.new(1, 0, 0, 16),
         AutomaticSize = Enum.AutomaticSize.Y,
@@ -569,13 +582,13 @@ function Container:Label(opts)
     return el
 end
 
---== Paragraph ==================================================================
+-- Paragraph
 function Container:Paragraph(opts)
     opts = norm(opts)
     return newCard(self, { Title = opts.Title, Desc = opts.Content or opts.Desc })
 end
 
---== Divider ====================================================================
+-- Divider
 function Container:Divider()
     local win = self.Window
     local line = create(win, "Frame", {
@@ -587,21 +600,17 @@ function Container:Divider()
     return { Frame = line, Destroy = function() line:Destroy() end }
 end
 
---== Button =====================================================================
+-- Button
 function Container:Button(opts)
     opts = norm(opts)
     local win = self.Window
     local el = newCard(self, { Title = opts.Title, Desc = opts.Desc, Clickable = true, RightWidth = 24, Locked = opts.Locked })
     local card = el.Frame
 
-    textLabel(win, {
-        Text = "›",
-        Font = FONT_BOLD,
-        TextSize = 22,
-        TextXAlignment = Enum.TextXAlignment.Center,
-        Size = UDim2.fromOffset(20, 22),
+    local arrow = chevron(win, {
         AnchorPoint = Vector2.new(1, 0.5),
-        Position = UDim2.new(1, 0, 0.5, 0),
+        Position = UDim2.new(1, -4, 0.5, 0),
+        Rotation = -90,
         Parent = el.Header,
     }, "Accent")
 
@@ -611,7 +620,7 @@ function Container:Button(opts)
             return
         end
         local t = win.Theme
-        card.BackgroundColor3 = t.Element:Lerp(t.Accent, 0.35)
+        card.BackgroundColor3 = t.Element:Lerp(t.Accent, 0.3)
         tween(card, { BackgroundColor3 = t.ElementHover }, 0.25)
         fire(opts.Callback)
     end)
@@ -622,35 +631,35 @@ function Container:Button(opts)
     return el
 end
 
---== Toggle =====================================================================
+-- Toggle
 function Container:Toggle(opts)
     opts = norm(opts)
     local win = self.Window
     local el = newCard(self, { Title = opts.Title, Desc = opts.Desc, Clickable = true, RightWidth = 50, Locked = opts.Locked })
 
     local track = create(win, "Frame", {
-        Size = UDim2.fromOffset(38, 20),
+        Size = UDim2.fromOffset(36, 18),
         AnchorPoint = Vector2.new(1, 0.5),
         Position = UDim2.new(1, 0, 0.5, 0),
         BorderSizePixel = 0,
         Parent = el.Header,
     })
-    corner(track, 10)
+    corner(track, 4)
     local knob = create(win, "Frame", {
-        Size = UDim2.fromOffset(14, 14),
+        Size = UDim2.fromOffset(12, 12),
         AnchorPoint = Vector2.new(0, 0.5),
         Position = UDim2.new(0, 3, 0.5, 0),
         BackgroundColor3 = Color3.new(1, 1, 1),
         BorderSizePixel = 0,
         Parent = track,
     })
-    corner(knob, 7)
+    corner(knob, 3)
 
     el.Value = opts.Default == true
 
     local function apply(animate)
         local col = el.Value and win.Theme.Accent or win.Theme.Track
-        local pos = el.Value and UDim2.new(1, -17, 0.5, 0) or UDim2.new(0, 3, 0.5, 0)
+        local pos = el.Value and UDim2.new(1, -15, 0.5, 0) or UDim2.new(0, 3, 0.5, 0)
         if animate then
             tween(track, { BackgroundColor3 = col }, 0.15)
             tween(knob, { Position = pos }, 0.15)
@@ -688,7 +697,7 @@ function Container:Toggle(opts)
     return el
 end
 
---== Slider =====================================================================
+-- Slider
 function Container:Slider(opts)
     opts = norm(opts)
     local win = self.Window
@@ -713,7 +722,7 @@ function Container:Slider(opts)
         AnchorPoint = Vector2.new(1, 0),
         Position = UDim2.new(1, 0, 0, 0),
         TextXAlignment = Enum.TextXAlignment.Right,
-        TextSize = 12,
+        TextSize = 13,
         Parent = row,
     }, "SubText")
     local hit = create(win, "TextButton", {
@@ -723,28 +732,28 @@ function Container:Slider(opts)
         Parent = row,
     })
     local track = create(win, "Frame", {
-        Size = UDim2.new(1, 0, 0, 6),
+        Size = UDim2.new(1, 0, 0, 4),
         AnchorPoint = Vector2.new(0, 0.5),
         Position = UDim2.new(0, 0, 0.5, 0),
         BorderSizePixel = 0,
         Parent = hit,
     }, { BackgroundColor3 = "Track" })
-    corner(track, 3)
+    corner(track, 2)
     local fill = create(win, "Frame", {
         Size = UDim2.fromScale(0, 1),
         BorderSizePixel = 0,
         Parent = track,
     }, { BackgroundColor3 = "Accent" })
-    corner(fill, 3)
+    corner(fill, 2)
     local knob = create(win, "Frame", {
-        Size = UDim2.fromOffset(14, 14),
+        Size = UDim2.fromOffset(12, 12),
         AnchorPoint = Vector2.new(0.5, 0.5),
         Position = UDim2.new(1, 0, 0.5, 0),
         BackgroundColor3 = Color3.new(1, 1, 1),
         BorderSizePixel = 0,
         Parent = fill,
     })
-    corner(knob, 7)
+    corner(knob, 3)
 
     local function snap(v)
         v = math.clamp(v, min, max)
@@ -797,12 +806,12 @@ function Container:Slider(opts)
     return el
 end
 
---== Dropdown ===================================================================
+-- Dropdown
 function Container:Dropdown(opts)
     opts = norm(opts)
     local win = self.Window
     local multi = opts.Multi == true
-    local placeholder = opts.Placeholder or "Select..."
+    local placeholder = opts.Placeholder or "none"
 
     local values = {}
     for _, v in ipairs(opts.Values or {}) do
@@ -819,23 +828,19 @@ function Container:Dropdown(opts)
         LayoutOrder = 2,
         Parent = el.Frame,
     }, { BackgroundColor3 = "Field" })
-    corner(select, 6)
+    corner(select, 4)
     stroke(win, select, "Outline")
 
     local selText = textLabel(win, {
-        TextSize = 12,
+        TextSize = 13,
         TextTruncate = Enum.TextTruncate.AtEnd,
         Size = UDim2.new(1, -34, 1, 0),
         Position = UDim2.new(0, 10, 0, 0),
         Parent = select,
     }, "Text")
-    local arrow = textLabel(win, {
-        Text = "▼",
-        TextSize = 9,
-        TextXAlignment = Enum.TextXAlignment.Center,
-        Size = UDim2.fromOffset(20, 30),
-        AnchorPoint = Vector2.new(1, 0),
-        Position = UDim2.new(1, -6, 0, 0),
+    local arrow = chevron(win, {
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.new(1, -16, 0.5, 0),
         Parent = select,
     }, "SubText")
 
@@ -977,23 +982,18 @@ function Container:Dropdown(opts)
                 LayoutOrder = i,
                 Parent = scroll,
             }, { BackgroundColor3 = "Field" })
-            corner(btn, 5)
+            corner(btn, 3)
             local lbl = textLabel(win, {
                 Text = v,
-                TextSize = 12,
+                TextSize = 13,
                 TextTruncate = Enum.TextTruncate.AtEnd,
                 Size = UDim2.new(1, -30, 1, 0),
                 Position = UDim2.new(0, 8, 0, 0),
                 Parent = btn,
             }, "Text")
-            local check = textLabel(win, {
-                Text = "✓",
-                Font = FONT_BOLD,
-                TextSize = 12,
-                TextXAlignment = Enum.TextXAlignment.Center,
-                Size = UDim2.fromOffset(20, 26),
-                AnchorPoint = Vector2.new(1, 0),
-                Position = UDim2.new(1, -4, 0, 0),
+            local check = checkMark(win, {
+                AnchorPoint = Vector2.new(0.5, 0.5),
+                Position = UDim2.new(1, -14, 0.5, 0),
                 Visible = false,
                 Parent = btn,
             }, "Accent")
@@ -1066,7 +1066,7 @@ function Container:Dropdown(opts)
     return el
 end
 
---== Input ======================================================================
+-- Input
 function Container:Input(opts)
     opts = norm(opts)
     local win = self.Window
@@ -1080,18 +1080,18 @@ function Container:Input(opts)
         LayoutOrder = 2,
         Parent = el.Frame,
     }, { BackgroundColor3 = "Field" })
-    corner(field, 6)
+    corner(field, 4)
     local fieldStroke = stroke(win, field, "Outline")
 
     local box = create(win, "TextBox", {
         Text = opts.Default or "",
-        PlaceholderText = opts.Placeholder or "Type here...",
+        PlaceholderText = opts.Placeholder or "",
         ClearTextOnFocus = opts.ClearTextOnFocus == true,
         MultiLine = multiline,
         TextWrapped = multiline,
         TextEditable = not el.Locked,
         Font = FONT_REG,
-        TextSize = 12,
+        TextSize = 13,
         TextXAlignment = Enum.TextXAlignment.Left,
         TextYAlignment = multiline and Enum.TextYAlignment.Top or Enum.TextYAlignment.Center,
         BackgroundTransparency = 1,
@@ -1151,7 +1151,7 @@ function Container:Input(opts)
     return el
 end
 
---== Keybind ====================================================================
+-- Keybind
 function Container:Keybind(opts)
     opts = norm(opts)
     local win = self.Window
@@ -1166,10 +1166,10 @@ function Container:Keybind(opts)
         BorderSizePixel = 0,
         Parent = el.Header,
     }, { BackgroundColor3 = "Field" })
-    corner(btn, 5)
+    corner(btn, 4)
     stroke(win, btn, "Outline")
     local txt = textLabel(win, {
-        TextSize = 12,
+        TextSize = 13,
         TextXAlignment = Enum.TextXAlignment.Center,
         Size = UDim2.fromScale(1, 1),
         Parent = btn,
@@ -1183,7 +1183,7 @@ function Container:Keybind(opts)
 
     local listening = false
     local function render()
-        txt.Text = listening and "..." or (el.Value and el.Value.Name or "None")
+        txt.Text = listening and "..." or (el.Value and el.Value.Name or "none")
     end
     render()
 
@@ -1239,7 +1239,7 @@ function Container:Keybind(opts)
     return el
 end
 
---== ColorPicker ================================================================
+-- ColorPicker
 function Container:ColorPicker(opts)
     opts = norm(opts)
     local win = self.Window
@@ -1254,7 +1254,7 @@ function Container:ColorPicker(opts)
         BorderSizePixel = 0,
         Parent = el.Header,
     })
-    corner(swatch, 5)
+    corner(swatch, 4)
     stroke(win, swatch, "Outline")
 
     local panel = create(win, "Frame", {
@@ -1266,20 +1266,19 @@ function Container:ColorPicker(opts)
         Parent = el.Frame,
     })
 
-    -- saturation / value box
     local svBox = create(win, "Frame", {
         Size = UDim2.new(1, 0, 0, 100),
         BorderSizePixel = 0,
         Parent = panel,
     })
-    corner(svBox, 6)
+    corner(svBox, 4)
     local white = create(win, "Frame", {
         Size = UDim2.fromScale(1, 1),
         BackgroundColor3 = Color3.new(1, 1, 1),
         BorderSizePixel = 0,
         Parent = svBox,
     })
-    corner(white, 6)
+    corner(white, 4)
     local wg = Instance.new("UIGradient")
     wg.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 1) })
     wg.Parent = white
@@ -1289,7 +1288,7 @@ function Container:ColorPicker(opts)
         BorderSizePixel = 0,
         Parent = svBox,
     })
-    corner(black, 6)
+    corner(black, 4)
     local bg = Instance.new("UIGradient")
     bg.Rotation = 90
     bg.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(1, 0) })
@@ -1316,7 +1315,6 @@ function Container:ColorPicker(opts)
     cs.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     cs.Parent = svCursor
 
-    -- hue bar
     local hueBar = create(win, "TextButton", {
         Text = "",
         AutoButtonColor = false,
@@ -1326,7 +1324,7 @@ function Container:ColorPicker(opts)
         BorderSizePixel = 0,
         Parent = panel,
     })
-    corner(hueBar, 6)
+    corner(hueBar, 3)
     local hg = Instance.new("UIGradient")
     hg.Color = ColorSequence.new({
         ColorSequenceKeypoint.new(0, Color3.fromHSV(0, 1, 1)),
@@ -1354,18 +1352,17 @@ function Container:ColorPicker(opts)
     hs.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     hs.Parent = hueCursor
 
-    -- hex field
     local hexField = create(win, "Frame", {
         Size = UDim2.new(1, 0, 0, 24),
         Position = UDim2.new(0, 0, 0, 126),
         BorderSizePixel = 0,
         Parent = panel,
     }, { BackgroundColor3 = "Field" })
-    corner(hexField, 6)
+    corner(hexField, 4)
     stroke(win, hexField, "Outline")
     local hexBox = create(win, "TextBox", {
         Font = FONT_REG,
-        TextSize = 12,
+        TextSize = 13,
         ClearTextOnFocus = false,
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
@@ -1462,7 +1459,7 @@ function Container:ColorPicker(opts)
     return el
 end
 
---== Section (collapsible group, returns a Container) ===========================
+-- Section (collapsible group, gives back a container)
 function Container:Section(opts)
     opts = norm(opts)
     local win = self.Window
@@ -1485,19 +1482,15 @@ function Container:Section(opts)
         Parent = wrapper,
     })
     local title = textLabel(win, {
-        Text = string.upper(opts.Title or "Section"),
+        Text = opts.Title or "Section",
         Font = FONT_BOLD,
-        TextSize = 11,
+        TextSize = 13,
         Size = UDim2.new(1, -24, 1, 0),
         Parent = header,
     }, "SubText")
-    local chevron = textLabel(win, {
-        Text = "▼",
-        TextSize = 9,
-        TextXAlignment = Enum.TextXAlignment.Center,
-        Size = UDim2.fromOffset(20, 22),
-        AnchorPoint = Vector2.new(1, 0),
-        Position = UDim2.new(1, 0, 0, 0),
+    local arrow = chevron(win, {
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.new(1, -10, 0.5, 0),
         Parent = header,
     }, "SubText")
 
@@ -1517,10 +1510,10 @@ function Container:Section(opts)
     function sec:SetOpen(state)
         opened = state and true or false
         body.Visible = opened
-        tween(chevron, { Rotation = opened and 0 or -90 }, 0.15)
+        tween(arrow, { Rotation = opened and 0 or -90 }, 0.15)
     end
     function sec:SetTitle(text)
-        title.Text = string.upper(text)
+        title.Text = text
     end
     function sec:Destroy()
         wrapper:Destroy()
@@ -1528,7 +1521,7 @@ function Container:Section(opts)
 
     sec:SetOpen(opened)
     if opts.Collapsible == false then
-        chevron.Visible = false
+        arrow.Visible = false
     else
         header.MouseButton1Click:Connect(function()
             sec:SetOpen(not opened)
@@ -1537,15 +1530,14 @@ function Container:Section(opts)
     return sec
 end
 
--- names that Tabs forward to their default channel
+-- tabs forward these to their default channel
 local ELEMENT_NAMES = {
     "Label", "Paragraph", "Button", "Toggle", "Slider", "Dropdown",
     "Input", "Keybind", "ColorPicker", "Divider", "Section",
 }
 
---------------------------------------------------------------------------------
--- Channel (a page inside a tab, picked from the channel bar in the middle)
---------------------------------------------------------------------------------
+---------------------------------------------------------------- channel
+
 function Channel:Select()
     self.Tab:SelectChannel(self)
 end
@@ -1574,9 +1566,8 @@ function Channel:Destroy()
     end
 end
 
---------------------------------------------------------------------------------
--- Tab
---------------------------------------------------------------------------------
+---------------------------------------------------------------- tab
+
 function Tab:Channel(opts)
     opts = norm(opts)
     local win = self.Window
@@ -1593,7 +1584,7 @@ function Tab:Channel(opts)
         LayoutOrder = #self.Channels + 1,
         Parent = self._bar,
     }, { BackgroundColor3 = "Element" })
-    corner(btn, 7)
+    corner(btn, 4)
     pad(btn, 10, 0, 10, 0)
     local lbl = textLabel(win, {
         Text = "# " .. title,
@@ -1609,7 +1600,6 @@ function Tab:Channel(opts)
         Visible = false,
         Parent = btn,
     }, { BackgroundColor3 = "Accent" })
-    corner(underline, 1)
 
     local page = create(win, "ScrollingFrame", {
         Name = "Page_" .. title,
@@ -1711,9 +1701,6 @@ function Tab:Select()
     self.Window:SelectTab(self)
 end
 
---------------------------------------------------------------------------------
--- Window: tabs
---------------------------------------------------------------------------------
 function Window:Tab(opts)
     opts = norm(opts)
     local title = opts.Title or "Tab"
@@ -1730,23 +1717,22 @@ function Window:Tab(opts)
         Name = "Tab_" .. title,
         Text = "",
         AutoButtonColor = false,
-        Size = UDim2.new(1, 0, 0, 36),
+        Size = UDim2.new(1, 0, 0, 34),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
         LayoutOrder = self.Left:_next(),
         Parent = self._leftScroll,
     }, { BackgroundColor3 = "Element" })
-    corner(btn, 8)
+    corner(btn, 5)
 
     local indicator = create(self, "Frame", {
-        Size = UDim2.fromOffset(3, 18),
+        Size = UDim2.fromOffset(3, 16),
         AnchorPoint = Vector2.new(0, 0.5),
         Position = UDim2.new(0, 0, 0.5, 0),
         BorderSizePixel = 0,
         Visible = false,
         Parent = btn,
     }, { BackgroundColor3 = "Accent" })
-    corner(indicator, 2)
 
     local icon = makeIcon(self, {
         Size = UDim2.fromOffset(18, 18),
@@ -1763,7 +1749,7 @@ function Window:Tab(opts)
         Parent = btn,
     })
 
-    local bar = create(self, "ScrollingFrame", {
+    local barFrame = create(self, "ScrollingFrame", {
         Name = "Bar_" .. title,
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
@@ -1776,13 +1762,13 @@ function Window:Tab(opts)
         Visible = false,
         Parent = self._chBar,
     })
-    list(bar, 4, Enum.FillDirection.Horizontal, nil, Enum.VerticalAlignment.Center)
+    list(barFrame, 4, Enum.FillDirection.Horizontal, nil, Enum.VerticalAlignment.Center)
 
     tab._button = btn
     tab._indicator = indicator
     tab._icon = icon
     tab._label = label
-    tab._bar = bar
+    tab._bar = barFrame
 
     btn.MouseEnter:Connect(function()
         if self.SelectedTab ~= tab then
@@ -1841,9 +1827,8 @@ function Window:SelectTab(tab)
     tab:_visual()
 end
 
---------------------------------------------------------------------------------
--- Window: notifications and dialogs
---------------------------------------------------------------------------------
+---------------------------------------------------------------- notify / dialog
+
 function Window:Notify(opts)
     opts = norm(opts)
     local t = self.Theme
@@ -1869,7 +1854,7 @@ function Window:Notify(opts)
         ClipsDescendants = true,
         Parent = wrap,
     }, { BackgroundColor3 = "Element" })
-    corner(card, 10)
+    corner(card, 5)
     stroke(self, card, "Outline")
 
     create(self, "Frame", {
@@ -1899,7 +1884,7 @@ function Window:Notify(opts)
         textLabel(self, {
             Text = opts.Content,
             Font = FONT_REG,
-            TextSize = 12,
+            TextSize = 13,
             TextWrapped = true,
             Size = UDim2.new(1, 0, 0, 14),
             AutomaticSize = Enum.AutomaticSize.Y,
@@ -1907,7 +1892,7 @@ function Window:Notify(opts)
             Parent = content,
         }, "SubText")
     end
-    local bar = create(self, "Frame", {
+    local timer = create(self, "Frame", {
         AnchorPoint = Vector2.new(0, 1),
         Position = UDim2.new(0, 0, 1, 0),
         Size = UDim2.new(1, 0, 0, 2),
@@ -1917,7 +1902,7 @@ function Window:Notify(opts)
     })
 
     tween(card, { Position = UDim2.new(0, 0, 0, 0) }, 0.3, Enum.EasingStyle.Quint)
-    tween(bar, { Size = UDim2.new(0, 0, 0, 2) }, duration, Enum.EasingStyle.Linear)
+    tween(timer, { Size = UDim2.new(0, 0, 0, 2) }, duration, Enum.EasingStyle.Linear)
 
     local dismissed = false
     local function dismiss()
@@ -1959,7 +1944,7 @@ function Window:Dialog(opts)
         BorderSizePixel = 0,
         Parent = overlay,
     }, { BackgroundColor3 = "Element" })
-    corner(card, 12)
+    corner(card, 6)
     stroke(self, card, "Outline")
     pad(card, 18, 16, 18, 16)
     list(card, 8)
@@ -1967,7 +1952,7 @@ function Window:Dialog(opts)
     textLabel(self, {
         Text = opts.Title or "Dialog",
         Font = FONT_BOLD,
-        TextSize = 15,
+        TextSize = 16,
         TextWrapped = true,
         Size = UDim2.new(1, 0, 0, 20),
         AutomaticSize = Enum.AutomaticSize.Y,
@@ -1978,7 +1963,7 @@ function Window:Dialog(opts)
         textLabel(self, {
             Text = opts.Content,
             Font = FONT_REG,
-            TextSize = 13,
+            TextSize = 14,
             TextWrapped = true,
             Size = UDim2.new(1, 0, 0, 16),
             AutomaticSize = Enum.AutomaticSize.Y,
@@ -2020,7 +2005,7 @@ function Window:Dialog(opts)
         local btn = create(self, "TextButton", {
             Text = b.Title or "OK",
             Font = FONT_MED,
-            TextSize = 13,
+            TextSize = 14,
             TextColor3 = fg,
             BackgroundColor3 = bg,
             AutoButtonColor = true,
@@ -2030,7 +2015,7 @@ function Window:Dialog(opts)
             LayoutOrder = i,
             Parent = row,
         })
-        corner(btn, 7)
+        corner(btn, 4)
         pad(btn, 16, 0, 16, 0)
         btn.MouseButton1Click:Connect(function()
             close()
@@ -2041,17 +2026,39 @@ function Window:Dialog(opts)
     return { Close = close }
 end
 
---------------------------------------------------------------------------------
--- Window: public API
---------------------------------------------------------------------------------
+---------------------------------------------------------------- window api
+
 function Window:Toggle(state)
     if state == nil then
         state = not self.Visible
     end
     self.Visible = state
-    self.Main.Visible = state
+    self._toggleId = (self._toggleId or 0) + 1
+    local id = self._toggleId
+    local main, scale = self.Main, self._scale
+
     if self._openButton then
         self._openButton.Visible = (not state) and self._floating
+    end
+
+    if state then
+        -- start from "hidden" values only if the window was fully hidden
+        if not main.Visible then
+            main.GroupTransparency = 1
+            scale.Scale = 0.94
+            main.Visible = true
+        end
+        tween(main, { GroupTransparency = 0 }, 0.2, Enum.EasingStyle.Quad)
+        tween(scale, { Scale = 1 }, 0.25, Enum.EasingStyle.Quint)
+    else
+        tween(main, { GroupTransparency = 1 }, 0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+        tween(scale, { Scale = 0.94 }, 0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+        task.delay(0.17, function()
+            -- ignore if the window was opened again or destroyed meanwhile
+            if self._toggleId == id and not self._destroyed then
+                main.Visible = false
+            end
+        end)
     end
 end
 
@@ -2094,7 +2101,7 @@ end
 
 function Window:SetProfileVisible(state)
     self._profile.Visible = state
-    self._pages.Size = UDim2.new(1, 0, 1, -(41 + (state and PROFILE_H or 0)))
+    self._pages.Size = UDim2.new(1, 0, 1, -(41 + (state and PROFILE_H or FOOTER_H)))
 end
 
 function Window:SetProfile(info)
@@ -2138,7 +2145,8 @@ function Window:Destroy()
     fire(self._onDestroy)
 end
 
--- Config -----------------------------------------------------------------------
+---------------------------------------------------------------- configs
+
 function Window:_cfgFolder()
     return self.FolderName .. "/configs"
 end
@@ -2227,10 +2235,11 @@ function Window:DeleteConfig(name)
     return pcall(delfile, path)
 end
 
--- Ready-made settings tab (themes, accent, keybind, transparency, configs) -----
+---------------------------------------------------------------- settings tab
+
 function Window:CreateSettingsTab(opts)
     opts = opts or {}
-    local tab = self:Tab({ Title = opts.Title or "Settings", Icon = opts.Icon or "⚙" })
+    local tab = self:Tab({ Title = opts.Title or "Settings", Icon = opts.Icon })
 
     local ui = tab:Channel("interface")
     local themeNames = {}
@@ -2257,7 +2266,7 @@ function Window:CreateSettingsTab(opts)
         end,
     })
     ui:Keybind({
-        Title = "Toggle UI keybind",
+        Title = "Toggle UI key",
         Default = self.ToggleKey,
         ChangedCallback = function(k)
             if k then
@@ -2277,7 +2286,7 @@ function Window:CreateSettingsTab(opts)
         end,
     })
     ui:Toggle({
-        Title = "Show profile card",
+        Title = "Show profile",
         Default = true,
         CallOnCreate = false,
         Callback = function(v)
@@ -2286,7 +2295,7 @@ function Window:CreateSettingsTab(opts)
     })
     ui:Button({
         Title = "Destroy UI",
-        Desc = "Closes this window completely",
+        Desc = "Removes the window until you run the script again",
         Callback = function()
             self:Dialog({
                 Title = "Destroy UI",
@@ -2355,9 +2364,8 @@ function Window:CreateSettingsTab(opts)
     return tab
 end
 
---------------------------------------------------------------------------------
--- Gui mounting
---------------------------------------------------------------------------------
+---------------------------------------------------------------- gui mounting
+
 local function playerGui()
     return LocalPlayer and LocalPlayer:FindFirstChildOfClass("PlayerGui")
 end
@@ -2405,9 +2413,8 @@ local function removeOld(name)
     end
 end
 
---------------------------------------------------------------------------------
--- SAR:CreateWindow
---------------------------------------------------------------------------------
+---------------------------------------------------------------- SAR:CreateWindow
+
 function SAR:CreateWindow(opts)
     opts = opts or {}
 
@@ -2436,7 +2443,6 @@ function SAR:CreateWindow(opts)
     local LW = opts.LeftWidth or 168
     local RW = opts.RightWidth or 168
 
-    -- screen gui ----------------------------------------------------------------
     local guiName = "SAR_UI"
     removeOld(guiName)
     local gui = Instance.new("ScreenGui")
@@ -2444,7 +2450,6 @@ function SAR:CreateWindow(opts)
     mountGui(gui)
     self.Gui = gui
 
-    -- main window -----------------------------------------------------------------
     local size = opts.Size
     if not size then
         local cam = workspace.CurrentCamera
@@ -2452,7 +2457,7 @@ function SAR:CreateWindow(opts)
         size = UDim2.fromOffset(math.min(860, vs.X - 24), math.min(540, vs.Y - 24))
     end
 
-    local main = create(self, "Frame", {
+    local main = create(self, "CanvasGroup", {
         Name = "Main",
         AnchorPoint = Vector2.new(0.5, 0.5),
         Position = UDim2.fromScale(0.5, 0.5),
@@ -2461,12 +2466,16 @@ function SAR:CreateWindow(opts)
         ClipsDescendants = true,
         Parent = gui,
     }, { BackgroundColor3 = "Background" })
-    corner(main, 12)
+    corner(main, 6)
     stroke(self, main, "Outline")
     self.Main = main
     table.insert(self._fadeFrames, main)
 
-    -- top bar -----------------------------------------------------------------------
+    local scale = Instance.new("UIScale")
+    scale.Parent = main
+    self._scale = scale
+
+    -- top bar
     local topbar = create(self, "Frame", {
         Name = "TopBar",
         Size = UDim2.new(1, 0, 0, 42),
@@ -2500,16 +2509,16 @@ function SAR:CreateWindow(opts)
         end)
     else
         logo = create(self, "Frame", {
-            Size = UDim2.fromOffset(24, 24),
+            Size = UDim2.fromOffset(22, 22),
             BorderSizePixel = 0,
             LayoutOrder = 1,
             Parent = leftGroup,
         }, { BackgroundColor3 = "Accent" })
-        corner(logo, 7)
+        corner(logo, 4)
         textLabel(self, {
             Text = "S",
             Font = FONT_BOLD,
-            TextSize = 14,
+            TextSize = 15,
             TextXAlignment = Enum.TextXAlignment.Center,
             Size = UDim2.fromScale(1, 1),
             Parent = logo,
@@ -2519,7 +2528,7 @@ function SAR:CreateWindow(opts)
     self._titleLabel = textLabel(self, {
         Text = self.Title,
         Font = FONT_BOLD,
-        TextSize = 14,
+        TextSize = 16,
         Size = UDim2.new(0, 0, 0, 18),
         AutomaticSize = Enum.AutomaticSize.X,
         LayoutOrder = 2,
@@ -2538,11 +2547,11 @@ function SAR:CreateWindow(opts)
             LayoutOrder = 3,
             Parent = leftGroup,
         }, { BackgroundColor3 = "Element" })
-        corner(pill, 9)
-        pad(pill, 8, 0, 8, 0)
+        corner(pill, 4)
+        pad(pill, 7, 0, 7, 0)
         textLabel(self, {
             Text = subtitle,
-            TextSize = 11,
+            TextSize = 12,
             Size = UDim2.new(0, 0, 1, 0),
             AutomaticSize = Enum.AutomaticSize.X,
             Parent = pill,
@@ -2560,45 +2569,86 @@ function SAR:CreateWindow(opts)
     list(rightGroup, 4, Enum.FillDirection.Horizontal, nil, Enum.VerticalAlignment.Center)
     pad(rightGroup, 0, 0, 10, 0)
 
-    local function topButton(text, order, hoverKey)
+    -- minimize / close buttons are drawn from bars, no glyphs
+    local function topButton(kind, order, hoverKey)
         local b = create(self, "TextButton", {
-            Text = text,
-            Font = FONT_BOLD,
-            TextSize = 16,
+            Text = "",
             AutoButtonColor = false,
             Size = UDim2.fromOffset(28, 28),
             BackgroundTransparency = 1,
             BorderSizePixel = 0,
             LayoutOrder = order,
             Parent = rightGroup,
-        }, { TextColor3 = "SubText", BackgroundColor3 = hoverKey })
-        corner(b, 7)
+        }, { BackgroundColor3 = hoverKey })
+        corner(b, 4)
+        local bars = {}
+        if kind == "min" then
+            table.insert(bars, bar(self, b, 10, 2, 14, 14, 0, "SubText"))
+        else
+            table.insert(bars, bar(self, b, 12, 2, 14, 14, 45, "SubText"))
+            table.insert(bars, bar(self, b, 12, 2, 14, 14, -45, "SubText"))
+        end
         b.MouseEnter:Connect(function()
             tween(b, { BackgroundTransparency = 0 }, 0.1)
             if hoverKey == "Danger" then
-                tween(b, { TextColor3 = Color3.new(1, 1, 1) }, 0.1)
+                for _, f in ipairs(bars) do
+                    tween(f, { BackgroundColor3 = Color3.new(1, 1, 1) }, 0.1)
+                end
             end
         end)
         b.MouseLeave:Connect(function()
             tween(b, { BackgroundTransparency = 1 }, 0.1)
-            tween(b, { TextColor3 = self.Theme.SubText }, 0.1)
+            for _, f in ipairs(bars) do
+                tween(f, { BackgroundColor3 = self.Theme.SubText }, 0.1)
+            end
         end)
         return b
     end
-    local minBtn = topButton("–", 1, "Element")
-    local closeBtn = topButton("×", 2, "Danger")
+    local minBtn = topButton("min", 1, "Element")
+    local closeBtn = topButton("close", 2, "Danger")
 
-    -- drag by the top bar
-    local dragMouse, dragPos
-    bindDrag(self, topbar, function(pos)
+    -- drag by the top bar. the window glides to the cursor instead of snapping
+    -- keeps at least 100px of the window on screen and the top bar reachable
+    local function clampOnScreen(pos)
+        local vs = gui.AbsoluteSize
+        local sz = main.AbsoluteSize
+        local cx = pos.X.Scale * vs.X + pos.X.Offset
+        local cy = pos.Y.Scale * vs.Y + pos.Y.Offset
+        cx = math.clamp(cx, 100 - sz.X / 2, vs.X - 100 + sz.X / 2)
+        cy = math.clamp(cy, sz.Y / 2, vs.Y - 44 + sz.Y / 2)
+        return UDim2.new(pos.X.Scale, cx - pos.X.Scale * vs.X, pos.Y.Scale, cy - pos.Y.Scale * vs.Y)
+    end
+
+    local dragMouse, dragStart, dragTarget
+    local windowDragging = bindDrag(self, topbar, function(pos)
         local d = pos - dragMouse
-        main.Position = UDim2.new(dragPos.X.Scale, dragPos.X.Offset + d.X, dragPos.Y.Scale, dragPos.Y.Offset + d.Y)
+        dragTarget = clampOnScreen(UDim2.new(
+            dragStart.X.Scale, dragStart.X.Offset + d.X,
+            dragStart.Y.Scale, dragStart.Y.Offset + d.Y
+        ))
     end, function(pos)
         dragMouse = pos
-        dragPos = main.Position
+        dragStart = main.Position
+        dragTarget = main.Position
+    end)
+    self:_connect(RunService.RenderStepped, function(dt)
+        if not dragTarget then
+            return
+        end
+        local cur = main.Position
+        local alpha = 1 - math.exp(-dt * 14)
+        main.Position = cur:Lerp(dragTarget, alpha)
+        if not windowDragging() then
+            local dx = math.abs(cur.X.Offset - dragTarget.X.Offset)
+            local dy = math.abs(cur.Y.Offset - dragTarget.Y.Offset)
+            if dx < 0.4 and dy < 0.4 then
+                main.Position = dragTarget
+                dragTarget = nil
+            end
+        end
     end)
 
-    -- body ----------------------------------------------------------------------------
+    -- body
     local body = create(self, "Frame", {
         Name = "Body",
         BackgroundTransparency = 1,
@@ -2628,9 +2678,9 @@ function SAR:CreateWindow(opts)
             line.Position = UDim2.new(1, 0, 0, 0)
         end
         textLabel(self, {
-            Text = string.upper(titleText),
+            Text = titleText,
             Font = FONT_BOLD,
-            TextSize = 11,
+            TextSize = 13,
             Size = UDim2.new(1, -28, 0, 16),
             Position = UDim2.new(0, 14, 0, 12),
             Parent = rail,
@@ -2651,13 +2701,13 @@ function SAR:CreateWindow(opts)
         return rail, scroll
     end
 
-    local leftRail, leftScroll = buildRail("Left", LW, opts.LeftTitle or "Menu")
-    local rightRail, rightScroll = buildRail("Right", RW, opts.RightTitle or "Quick Actions")
+    local leftRail, leftScroll = buildRail("Left", LW, opts.LeftTitle or "Tabs")
+    local rightRail, rightScroll = buildRail("Right", RW, opts.RightTitle or "Quick")
     self._leftScroll = leftScroll
     self.Left = newContainer(self, leftScroll, Container)
     self.Right = newContainer(self, rightScroll, Container)
 
-    -- middle: channel bar + pages + profile -----------------------------------------
+    -- middle: channel bar, pages, profile, footer
     local mid = create(self, "Frame", {
         Name = "Middle",
         Position = UDim2.new(0, LW, 0, 0),
@@ -2694,11 +2744,11 @@ function SAR:CreateWindow(opts)
     })
     self._pages = pages
 
-    -- roblox profile, bottom middle ---------------------------------------------------
+    -- roblox profile card
     local profile = create(self, "Frame", {
         Name = "Profile",
         AnchorPoint = Vector2.new(0.5, 1),
-        Position = UDim2.new(0.5, 0, 1, -10),
+        Position = UDim2.new(0.5, 0, 1, -(FOOTER_H + 2)),
         Size = UDim2.new(1, -28, 0, 54),
         BorderSizePixel = 0,
         Parent = mid,
@@ -2706,53 +2756,42 @@ function SAR:CreateWindow(opts)
     local pc = Instance.new("UISizeConstraint")
     pc.MaxSize = Vector2.new(380, 54)
     pc.Parent = profile
-    corner(profile, 12)
+    corner(profile, 6)
     stroke(self, profile, "Outline")
 
     local avatar = create(self, "ImageLabel", {
         Size = UDim2.fromOffset(38, 38),
         AnchorPoint = Vector2.new(0, 0.5),
-        Position = UDim2.new(0, 10, 0.5, 0),
+        Position = UDim2.new(0, 8, 0.5, 0),
         BorderSizePixel = 0,
         Image = "",
         Parent = profile,
     }, { BackgroundColor3 = "Track" })
-    corner(avatar, 19)
-    stroke(self, avatar, "Accent", 2)
-    local dot = create(self, "Frame", {
-        Size = UDim2.fromOffset(11, 11),
-        AnchorPoint = Vector2.new(1, 1),
-        Position = UDim2.new(1, 2, 1, 2),
-        BorderSizePixel = 0,
-        ZIndex = 2,
-        Parent = avatar,
-    }, { BackgroundColor3 = "Success" })
-    corner(dot, 6)
-    stroke(self, dot, "Element", 2)
+    corner(avatar, 5)
 
     local player = LocalPlayer
     local nameLabel = textLabel(self, {
         Text = player and player.DisplayName or "Player",
         Font = FONT_BOLD,
-        TextSize = 14,
+        TextSize = 15,
         TextTruncate = Enum.TextTruncate.AtEnd,
-        Size = UDim2.new(1, -150, 0, 18),
-        Position = UDim2.new(0, 58, 0, 9),
+        Size = UDim2.new(1, -140, 0, 18),
+        Position = UDim2.new(0, 56, 0, 9),
         Parent = profile,
     }, "Text")
     local userLabel = textLabel(self, {
         Text = "@" .. (player and player.Name or "player"),
         Font = FONT_REG,
-        TextSize = 12,
+        TextSize = 13,
         TextTruncate = Enum.TextTruncate.AtEnd,
-        Size = UDim2.new(1, -150, 0, 14),
-        Position = UDim2.new(0, 58, 0, 28),
+        Size = UDim2.new(1, -140, 0, 14),
+        Position = UDim2.new(0, 56, 0, 28),
         Parent = profile,
     }, "SubText")
     local statsLabel = textLabel(self, {
-        Text = "-- FPS\n-- ms",
+        Text = "-- fps\n-- ms",
         Font = FONT_MED,
-        TextSize = 11,
+        TextSize = 12,
         TextXAlignment = Enum.TextXAlignment.Right,
         Size = UDim2.fromOffset(66, 34),
         AnchorPoint = Vector2.new(1, 0.5),
@@ -2765,6 +2804,19 @@ function SAR:CreateWindow(opts)
     self._profileAvatar = avatar
     self._profileName = nameLabel
     self._profileUser = userLabel
+
+    -- fixed footer text under the profile. plain TextLabel, no API touches it
+    textLabel(self, {
+        Name = "Footer",
+        Text = "SAR UI",
+        Font = FONT_BOLD,
+        TextSize = 13,
+        TextXAlignment = Enum.TextXAlignment.Center,
+        Size = UDim2.new(1, 0, 0, 16),
+        AnchorPoint = Vector2.new(0.5, 1),
+        Position = UDim2.new(0.5, 0, 1, -5),
+        Parent = mid,
+    }, "SubText")
 
     self:SetProfile({ UserId = player and player.UserId or 1 })
 
@@ -2785,7 +2837,7 @@ function SAR:CreateWindow(opts)
             pcall(function()
                 ping = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue() + 0.5)
             end)
-            statsLabel.Text = fps .. " FPS\n" .. ping .. " ms"
+            statsLabel.Text = fps .. " fps\n" .. ping .. " ms"
         end
     end)
 
@@ -2793,11 +2845,9 @@ function SAR:CreateWindow(opts)
         self:SetProfileVisible(false)
     end
 
-    -- resize grip -------------------------------------------------------------------------
+    -- resize grip, two little diagonal lines
     local grip = create(self, "TextButton", {
-        Text = "◢",
-        Font = FONT_REG,
-        TextSize = 12,
+        Text = "",
         AutoButtonColor = false,
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
@@ -2806,7 +2856,9 @@ function SAR:CreateWindow(opts)
         Size = UDim2.fromOffset(16, 16),
         ZIndex = 5,
         Parent = main,
-    }, { TextColor3 = "SubText" })
+    })
+    bar(self, grip, 5, 1, 11.5, 11.5, -45, "SubText").ZIndex = 5
+    bar(self, grip, 10, 1, 8.5, 8.5, -45, "SubText").ZIndex = 5
     if opts.Resizable ~= false then
         local startMouse, startSize, startPos
         bindDrag(self, grip, function(pos)
@@ -2819,6 +2871,7 @@ function SAR:CreateWindow(opts)
                 startPos.Y.Scale, startPos.Y.Offset + (h - startSize.Y) / 2
             )
         end, function(pos)
+            dragTarget = nil
             startMouse = pos
             startSize = main.AbsoluteSize
             startPos = main.Position
@@ -2827,7 +2880,7 @@ function SAR:CreateWindow(opts)
         grip.Visible = false
     end
 
-    -- notifications holder --------------------------------------------------------------
+    -- notifications
     local notif = create(self, "Frame", {
         Name = "Notifications",
         BackgroundTransparency = 1,
@@ -2839,20 +2892,20 @@ function SAR:CreateWindow(opts)
     list(notif, 8, Enum.FillDirection.Vertical, Enum.HorizontalAlignment.Right, Enum.VerticalAlignment.Bottom)
     self._notifHolder = notif
 
-    -- floating open button --------------------------------------------------------------------
+    -- floating open button (shows when the window is hidden)
     local openBtn = create(self, "TextButton", {
         Name = "OpenButton",
         Text = "S",
         Font = FONT_BOLD,
-        TextSize = 18,
+        TextSize = 20,
         AutoButtonColor = false,
-        Size = UDim2.fromOffset(44, 44),
-        Position = UDim2.new(0, 20, 0.5, -22),
+        Size = UDim2.fromOffset(42, 42),
+        Position = UDim2.new(0, 20, 0.5, -21),
         BorderSizePixel = 0,
         Visible = false,
         Parent = gui,
     }, { BackgroundColor3 = "Accent", TextColor3 = "AccentText" })
-    corner(openBtn, UDim.new(0.5, 0))
+    corner(openBtn, 6)
     stroke(self, openBtn, "Outline")
     self._openButton = openBtn
 
@@ -2862,10 +2915,10 @@ function SAR:CreateWindow(opts)
         if d.Magnitude > 5 then
             moved = true
         end
-        openBtn.Position = UDim2.new(
-            btnStartPos.X.Scale, btnStartPos.X.Offset + d.X,
-            btnStartPos.Y.Scale, btnStartPos.Y.Offset + d.Y
-        )
+        local vs = gui.AbsoluteSize
+        local px = math.clamp(btnStartPos.X.Scale * vs.X + btnStartPos.X.Offset + d.X, 0, vs.X - 42)
+        local py = math.clamp(btnStartPos.Y.Scale * vs.Y + btnStartPos.Y.Offset + d.Y, 0, vs.Y - 42)
+        openBtn.Position = UDim2.fromOffset(px, py)
     end, function(pos)
         btnStartMouse = pos
         btnStartPos = openBtn.Position
@@ -2879,7 +2932,6 @@ function SAR:CreateWindow(opts)
         self:Toggle(true)
     end)
 
-    -- top bar actions ---------------------------------------------------------------------------
     minBtn.MouseButton1Click:Connect(function()
         self:Toggle(false)
         if not self._floating then
@@ -2897,7 +2949,7 @@ function SAR:CreateWindow(opts)
         end
         self:Dialog({
             Title = "Close " .. self.Title,
-            Content = "Are you sure you want to close this window?",
+            Content = "Close this window?",
             Buttons = {
                 { Title = "Cancel" },
                 { Title = "Close", Variant = "Danger", Callback = function() self:Destroy() end },
@@ -2905,7 +2957,6 @@ function SAR:CreateWindow(opts)
         })
     end)
 
-    -- toggle keybind ------------------------------------------------------------------------------
     self:_connect(UserInputService.InputBegan, function(input, processed)
         if processed then
             return
@@ -2916,12 +2967,16 @@ function SAR:CreateWindow(opts)
     end)
 
     table.insert(SAR.Windows, self)
+
+    -- play the open animation when the window is created
+    self.Visible = false
+    main.Visible = false
+    self:Toggle(true)
     return self
 end
 
---------------------------------------------------------------------------------
--- Library level helpers
---------------------------------------------------------------------------------
+---------------------------------------------------------------- library helpers
+
 function SAR:AddTheme(name, data)
     SAR.Themes[name] = derive(Dark, data)
 end
