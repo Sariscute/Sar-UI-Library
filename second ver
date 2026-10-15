@@ -266,20 +266,6 @@ local function create(win, class, props, tmap)
     if parent then
         inst.Parent = parent
     end
-
-    -- Mobile-only quick actions can overlay the middle column. Keep their
-    -- descendants above the middle panel without changing desktop ZIndex.
-    if win and win._isMobile and inst:IsA("GuiObject") then
-        local ancestor = inst.Parent
-        while ancestor do
-            if ancestor.Name == "RightRail" then
-                inst.ZIndex = 31
-                break
-            end
-            ancestor = ancestor.Parent
-        end
-    end
-
     return inst
 end
 
@@ -2287,10 +2273,6 @@ end
 function Window:Dialog(opts)
     opts = norm(opts)
     local t = self.Theme
-    local dialogWidth = opts.Width or 340
-    if self._isMobile then
-        dialogWidth = math.max(200, math.min(dialogWidth, self.Main.AbsoluteSize.X - 24))
-    end
 
     local overlay = create(self, "TextButton", {
         Text = "",
@@ -2307,7 +2289,7 @@ function Window:Dialog(opts)
     local card = create(self, "Frame", {
         AnchorPoint = Vector2.new(0.5, 0.5),
         Position = UDim2.fromScale(0.5, 0.5),
-        Size = UDim2.new(0, dialogWidth, 0, 0),
+        Size = UDim2.new(0, opts.Width or 340, 0, 0),
         AutomaticSize = Enum.AutomaticSize.Y,
         BorderSizePixel = 0,
         Parent = overlay,
@@ -2476,8 +2458,7 @@ end
 
 function Window:SetProfileVisible(state)
     self._profile.Visible = state
-    local profileHeight = self._profileHeight or PROFILE_H
-    self._pages.Size = UDim2.new(1, 0, 1, -(41 + (state and profileHeight or FOOTER_H)))
+    self._pages.Size = UDim2.new(1, 0, 1, -(41 + (state and PROFILE_H or FOOTER_H)))
 end
 
 function Window:SetProfile(info)
@@ -2846,10 +2827,6 @@ local function playLoader(opts, theme)
     local total = math.max(tonumber(opts.LoadingTime) or 2.8, 0.8)
     local accent = theme.Accent
     local alive = true
-    local camera = workspace.CurrentCamera
-    local viewport = camera and camera.ViewportSize or Vector2.new(1280, 720)
-    local mobileLoader = UserInputService.TouchEnabled and viewport.X <= 950
-    local loaderWidth = mobileLoader and math.max(240, math.min(340, viewport.X - 24)) or 340
 
     local gui = Instance.new("ScreenGui")
     gui.Name = "SAR_UI_Loader"
@@ -2871,7 +2848,7 @@ local function playLoader(opts, theme)
     local card = create(nil, "CanvasGroup", {
         AnchorPoint = Vector2.new(0.5, 0.5),
         Position = UDim2.fromScale(0.5, 0.5),
-        Size = UDim2.fromOffset(loaderWidth, 140),
+        Size = UDim2.fromOffset(340, 140),
         BackgroundColor3 = theme.Topbar,
         BorderSizePixel = 0,
         GroupTransparency = 1,
@@ -2916,7 +2893,7 @@ local function playLoader(opts, theme)
     textLabel(nil, {
         Text = opts.Title or "SAR UI",
         Font = FONT_BOLD,
-        TextSize = mobileLoader and 18 or 20,
+        TextSize = 20,
         TextColor3 = theme.Text,
         TextTruncate = Enum.TextTruncate.AtEnd,
         Size = UDim2.new(1, -170, 0, 22),
@@ -2926,7 +2903,7 @@ local function playLoader(opts, theme)
     textLabel(nil, {
         Text = "loading interface",
         Font = FONT_REG,
-        TextSize = mobileLoader and 12 or 13,
+        TextSize = 13,
         TextColor3 = theme.SubText,
         Size = UDim2.new(1, -170, 0, 16),
         Position = UDim2.fromOffset(72, 42),
@@ -3078,22 +3055,8 @@ function SAR:CreateWindow(opts)
     self._floating = opts.FloatingButton ~= false
     self._onDestroy = opts.OnDestroy
 
-    local camera = workspace.CurrentCamera
-    local viewport = camera and camera.ViewportSize or Vector2.new(1280, 720)
-    -- Keep the established PC layout. Touch devices with a phone/tablet-sized
-    -- viewport get a compact navigation rail and a collapsible quick-action rail.
-    local isMobile = UserInputService.TouchEnabled and viewport.X <= 950
-    self._isMobile = isMobile
-
     local LW = opts.LeftWidth or 168
     local RW = opts.RightWidth or 168
-    if isMobile then
-        LW = math.min(112, math.max(92, math.floor(viewport.X * 0.31)))
-        RW = 0
-        self._profileHeight = 96
-    else
-        self._profileHeight = PROFILE_H
-    end
 
     local guiName = "SAR_UI"
     removeOld(guiName)
@@ -3106,43 +3069,16 @@ function SAR:CreateWindow(opts)
         end
     end
 
-    -- Refresh the viewport after the optional loader, which may have yielded
-    -- long enough for the device to rotate or the camera to change.
-    camera = workspace.CurrentCamera or camera
-    viewport = camera and camera.ViewportSize or viewport
-    if isMobile then
-        LW = math.min(112, math.max(92, math.floor(viewport.X * 0.31)))
-    end
-
     local gui = Instance.new("ScreenGui")
     gui.Name = guiName
-    if isMobile then
-        gui.IgnoreGuiInset = true
-    end
     mountGui(gui)
     self.Gui = gui
 
     local size = opts.Size
-    if isMobile then
-        local availableWidth = math.max(1, viewport.X - 16)
-        local availableHeight = math.max(1, viewport.Y - 16)
-        if size then
-            local requestedWidth = size.X.Scale * viewport.X + size.X.Offset
-            local requestedHeight = size.Y.Scale * viewport.Y + size.Y.Offset
-            size = UDim2.fromOffset(
-                math.clamp(requestedWidth, math.min(280, availableWidth), availableWidth),
-                math.clamp(requestedHeight, math.min(280, availableHeight), availableHeight)
-            )
-        else
-            size = UDim2.fromOffset(
-                math.min(860, availableWidth),
-                math.min(540, availableHeight)
-            )
-        end
-    elseif not size then
-        local sizeCamera = workspace.CurrentCamera
-        local sizeViewport = sizeCamera and sizeCamera.ViewportSize or Vector2.new(1280, 720)
-        size = UDim2.fromOffset(math.min(860, sizeViewport.X - 24), math.min(540, sizeViewport.Y - 24))
+    if not size then
+        local cam = workspace.CurrentCamera
+        local vs = cam and cam.ViewportSize or Vector2.new(1280, 720)
+        size = UDim2.fromOffset(math.min(860, vs.X - 24), math.min(540, vs.Y - 24))
     end
 
     -- Accent-responsive ambient shadow. Multiple translucent layers soften the edge
@@ -3263,12 +3199,6 @@ function SAR:CreateWindow(opts)
         LayoutOrder = 2,
         Parent = leftGroup,
     }, "Text")
-    if isMobile then
-        self._titleLabel.AutomaticSize = Enum.AutomaticSize.None
-        self._titleLabel.Size = UDim2.fromOffset(math.clamp(size.X.Offset - 208, 32, 150), 18)
-        self._titleLabel.TextTruncate = Enum.TextTruncate.AtEnd
-        self._titleLabel.ClipsDescendants = true
-    end
 
     local subtitle = opts.Subtitle
     if subtitle == nil then
@@ -3319,10 +3249,6 @@ function SAR:CreateWindow(opts)
         local bars = {}
         if kind == "min" then
             table.insert(bars, bar(self, b, 10, 2, 14, 14, 0, "SubText"))
-        elseif kind == "quick" then
-            table.insert(bars, bar(self, b, 11, 2, 14, 10, 0, "SubText"))
-            table.insert(bars, bar(self, b, 11, 2, 14, 14, 0, "SubText"))
-            table.insert(bars, bar(self, b, 11, 2, 14, 18, 0, "SubText"))
         else
             table.insert(bars, bar(self, b, 12, 2, 14, 14, 45, "SubText"))
             table.insert(bars, bar(self, b, 12, 2, 14, 14, -45, "SubText"))
@@ -3343,9 +3269,8 @@ function SAR:CreateWindow(opts)
         end)
         return b
     end
-    local quickBtn = isMobile and topButton("quick", 1, "Element") or nil
-    local minBtn = topButton("min", isMobile and 2 or 1, "Element")
-    local closeBtn = topButton("close", isMobile and 3 or 2, "Danger")
+    local minBtn = topButton("min", 1, "Element")
+    local closeBtn = topButton("close", 2, "Danger")
 
     -- drag by the top bar. the window glides to the cursor instead of snapping
     -- keeps at least 100px of the window on screen and the top bar reachable
@@ -3354,13 +3279,8 @@ function SAR:CreateWindow(opts)
         local sz = main.AbsoluteSize
         local cx = pos.X.Scale * vs.X + pos.X.Offset
         local cy = pos.Y.Scale * vs.Y + pos.Y.Offset
-        if isMobile then
-            cx = math.clamp(cx, sz.X / 2, math.max(sz.X / 2, vs.X - sz.X / 2))
-            cy = math.clamp(cy, sz.Y / 2, math.max(sz.Y / 2, vs.Y - sz.Y / 2))
-        else
-            cx = math.clamp(cx, 100 - sz.X / 2, vs.X - 100 + sz.X / 2)
-            cy = math.clamp(cy, sz.Y / 2, vs.Y - 44 + sz.Y / 2)
-        end
+        cx = math.clamp(cx, 100 - sz.X / 2, vs.X - 100 + sz.X / 2)
+        cy = math.clamp(cy, sz.Y / 2, vs.Y - 44 + sz.Y / 2)
         return UDim2.new(pos.X.Scale, cx - pos.X.Scale * vs.X, pos.Y.Scale, cy - pos.Y.Scale * vs.Y)
     end
 
@@ -3519,41 +3439,6 @@ function SAR:CreateWindow(opts)
 
     local leftRail, leftScroll = buildRail("Left", LW, opts.LeftTitle or "Tabs")
     local rightRail, rightScroll = buildRail("Right", RW, opts.RightTitle or "Quick")
-    if isMobile then
-        local quickWidth = math.min(176, math.max(116, math.floor(viewport.X * 0.52)))
-        rightRail.Size = UDim2.new(0, quickWidth, 1, 0)
-        rightRail.ZIndex = 30
-        rightRail.Visible = false
-        self._mobileQuickRail = rightRail
-        if quickBtn then
-            quickBtn.MouseButton1Click:Connect(function()
-                rightRail.Visible = not rightRail.Visible
-            end)
-        end
-
-        -- Refit after rotation or a viewport change while retaining all rail content.
-        if camera then
-            self:_connect(camera:GetPropertyChangedSignal("ViewportSize"), function()
-                if self._destroyed or not main.Parent then
-                    return
-                end
-                local currentViewport = camera.ViewportSize
-                local maxWidth = math.max(1, currentViewport.X - 16)
-                local maxHeight = math.max(1, currentViewport.Y - 16)
-                local currentWidth = main.Size.X.Scale * currentViewport.X + main.Size.X.Offset
-                local currentHeight = main.Size.Y.Scale * currentViewport.Y + main.Size.Y.Offset
-                main.Size = UDim2.fromOffset(
-                    math.clamp(currentWidth, math.min(280, maxWidth), maxWidth),
-                    math.clamp(currentHeight, math.min(280, maxHeight), maxHeight)
-                )
-                main.Position = UDim2.fromScale(0.5, 0.5)
-                rightRail.Size = UDim2.new(0, math.min(176, math.max(116, math.floor(currentViewport.X * 0.52))), 1, 0)
-                if self._notifHolder then
-                    self._notifHolder.Size = UDim2.new(0, math.max(200, currentViewport.X - 32), 1, -32)
-                end
-            end)
-        end
-    end
     self._leftScroll = leftScroll
     self.Left = newContainer(self, leftScroll, Container)
     self.Right = newContainer(self, rightScroll, Container)
@@ -3589,7 +3474,7 @@ function SAR:CreateWindow(opts)
         Name = "Pages",
         BackgroundTransparency = 1,
         Position = UDim2.new(0, 0, 0, 41),
-        Size = UDim2.new(1, 0, 1, -(41 + self._profileHeight)),
+        Size = UDim2.new(1, 0, 1, -(41 + PROFILE_H)),
         ClipsDescendants = true,
         Parent = mid,
     })
@@ -3600,18 +3485,18 @@ function SAR:CreateWindow(opts)
         Name = "Profile",
         AnchorPoint = Vector2.new(0.5, 1),
         Position = UDim2.new(0.5, 0, 1, -(FOOTER_H + 2)),
-        Size = UDim2.new(1, isMobile and -12 or -28, 0, isMobile and 64 or 68),
+        Size = UDim2.new(1, -28, 0, 68),
         BorderSizePixel = 0,
         Parent = mid,
     }, { BackgroundColor3 = "Element" })
     local pc = Instance.new("UISizeConstraint")
-    pc.MaxSize = Vector2.new(380, isMobile and 64 or 68)
+    pc.MaxSize = Vector2.new(380, 68)
     pc.Parent = profile
     corner(profile, 6)
     stroke(self, profile, "Outline")
 
     local avatar = create(self, "ImageLabel", {
-        Size = UDim2.fromOffset(isMobile and 32 or 38, isMobile and 32 or 38),
+        Size = UDim2.fromOffset(38, 38),
         AnchorPoint = Vector2.new(0, 0.5),
         Position = UDim2.new(0, 8, 0.5, 0),
         BorderSizePixel = 0,
@@ -3624,38 +3509,38 @@ function SAR:CreateWindow(opts)
     local nameLabel = textLabel(self, {
         Text = player and player.DisplayName or "Player",
         Font = FONT_BOLD,
-        TextSize = isMobile and 13 or 15,
+        TextSize = 15,
         TextTruncate = Enum.TextTruncate.AtEnd,
-        Size = UDim2.new(1, isMobile and -98 or -140, 0, 18),
-        Position = UDim2.new(0, isMobile and 46 or 56, 0, isMobile and 7 or 9),
+        Size = UDim2.new(1, -140, 0, 18),
+        Position = UDim2.new(0, 56, 0, 9),
         Parent = profile,
     }, "Text")
     local userLabel = textLabel(self, {
         Text = "@" .. (player and player.Name or "player"),
         Font = FONT_REG,
-        TextSize = isMobile and 11 or 13,
+        TextSize = 13,
         TextTruncate = Enum.TextTruncate.AtEnd,
-        Size = UDim2.new(1, isMobile and -98 or -140, 0, 14),
-        Position = UDim2.new(0, isMobile and 46 or 56, 0, isMobile and 24 or 27),
+        Size = UDim2.new(1, -140, 0, 14),
+        Position = UDim2.new(0, 56, 0, 27),
         Parent = profile,
     }, "SubText")
     local gameLabel = textLabel(self, {
         Text = "Playing: " .. game.Name,
         Font = FONT_MED,
-        TextSize = isMobile and 10 or 12,
+        TextSize = 12,
         TextTruncate = Enum.TextTruncate.AtEnd,
-        Size = UDim2.new(1, isMobile and -98 or -140, 0, 14),
-        Position = UDim2.new(0, isMobile and 46 or 56, 0, isMobile and 40 or 44),
+        Size = UDim2.new(1, -140, 0, 14),
+        Position = UDim2.new(0, 56, 0, 44),
         Parent = profile,
     }, "Accent")
     local statsLabel = textLabel(self, {
         Text = "-- fps\n-- ms",
         Font = FONT_MED,
-        TextSize = isMobile and 10 or 12,
+        TextSize = 12,
         TextXAlignment = Enum.TextXAlignment.Right,
-        Size = UDim2.fromOffset(isMobile and 44 or 66, isMobile and 28 or 34),
+        Size = UDim2.fromOffset(66, 34),
         AnchorPoint = Vector2.new(1, 0.5),
-        Position = UDim2.new(1, isMobile and -7 or -12, 0.5, 0),
+        Position = UDim2.new(1, -12, 0.5, 0),
         Visible = opts.ShowStats ~= false,
         Parent = profile,
     }, "SubText")
@@ -3681,7 +3566,7 @@ function SAR:CreateWindow(opts)
         Name = "Footer",
         Text = "SAR UI",
         Font = FONT_BOLD,
-        TextSize = isMobile and 11 or 13,
+        TextSize = 13,
         TextXAlignment = Enum.TextXAlignment.Center,
         Size = UDim2.new(1, 0, 0, 16),
         AnchorPoint = Vector2.new(0.5, 1),
@@ -3734,23 +3619,13 @@ function SAR:CreateWindow(opts)
         local startMouse, startSize, startPos
         bindDrag(self, grip, function(pos)
             local d = pos - startMouse
-            local w, h
-            if isMobile then
-                local currentViewport = camera and camera.ViewportSize or gui.AbsoluteSize
-                local maxWidth = math.max(1, currentViewport.X - 16)
-                local maxHeight = math.max(1, currentViewport.Y - 16)
-                w = math.clamp(startSize.X + d.X, math.min(280, maxWidth), maxWidth)
-                h = math.clamp(startSize.Y + d.Y, math.min(280, maxHeight), maxHeight)
-            else
-                w = math.max(startSize.X + d.X, 640)
-                h = math.max(startSize.Y + d.Y, 420)
-            end
+            local w = math.max(startSize.X + d.X, 640)
+            local h = math.max(startSize.Y + d.Y, 420)
             main.Size = UDim2.fromOffset(w, h)
-            local resizedPosition = UDim2.new(
+            main.Position = UDim2.new(
                 startPos.X.Scale, startPos.X.Offset + (w - startSize.X) / 2,
                 startPos.Y.Scale, startPos.Y.Offset + (h - startSize.Y) / 2
             )
-            main.Position = isMobile and clampOnScreen(resizedPosition) or resizedPosition
         end, function(pos)
             dragTarget = nil
             startMouse = pos
@@ -3767,7 +3642,7 @@ function SAR:CreateWindow(opts)
         BackgroundTransparency = 1,
         AnchorPoint = Vector2.new(1, 1),
         Position = UDim2.new(1, -16, 1, -16),
-        Size = UDim2.new(0, isMobile and math.max(200, (camera and camera.ViewportSize.X or viewport.X) - 32) or 300, 1, -32),
+        Size = UDim2.new(0, 300, 1, -32),
         Parent = gui,
     })
     list(notif, 8, Enum.FillDirection.Vertical, Enum.HorizontalAlignment.Right, Enum.VerticalAlignment.Bottom)
