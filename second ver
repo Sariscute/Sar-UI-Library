@@ -49,7 +49,7 @@
         DisplayName, Username, UserId, Game   (Game overrides the auto detected game name)
 ]]
 
-local SAR = { Version = "1.5.3", Windows = {} }
+local SAR = { Version = "1.5.4", Windows = {} }
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
@@ -68,7 +68,7 @@ local FONT_BOLD = Enum.Font.Ubuntu
 
 -- phones / tablets without a keyboard get bigger touch targets and no hover effects
 local TOUCH = UserInputService.TouchEnabled
-local MOBILE = TOUCH and not UserInputService.KeyboardEnabled
+local MOBILE = TOUCH and not (UserInputService.KeyboardEnabled and UserInputService.MouseEnabled)
 
 -- sz(desktop, mobile) picks a size depending on the device
 local function sz(desktop, mobile)
@@ -229,6 +229,15 @@ local function defaultWindowSize(vs)
     end
     local margin = sz(24, 12)
     return UDim2.fromOffset(math.min(860, vs.X - margin), math.max(math.min(540, vs.Y - margin), 240))
+end
+
+-- a size the script asked for, shrunk so it always fits on the screen
+local function fitWindowSize(size, vs)
+    local w = size.X.Scale * vs.X + size.X.Offset
+    local h = size.Y.Scale * vs.Y + size.Y.Offset
+    w = math.max(math.min(w, vs.X - 16), 240)
+    h = math.max(math.min(h, vs.Y - 16), 240)
+    return UDim2.fromOffset(w, h)
 end
 
 local Window = {}
@@ -3498,7 +3507,10 @@ function SAR:CreateWindow(opts)
     mountGui(gui)
     self.Gui = gui
 
-    local size = opts.Size or defaultWindowSize(viewportSize(gui))
+    -- a Size passed by the script is shrunk to fit the screen (phones), it never overflows
+    local vsNow = viewportSize(gui)
+    local size = opts.Size and fitWindowSize(opts.Size, vsNow) or defaultWindowSize(vsNow)
+    self._wantSize = opts.Size
 
     -- Layered soft shadow. Stacked translucent rounded rectangles fade out away from the
     -- window (no image assets needed): a few faint accent layers for a colored halo at the
@@ -4132,9 +4144,11 @@ function SAR:CreateWindow(opts)
         local startMouse, startSize, startPos
         bindDrag(self, grip, function(pos)
             local d = pos - startMouse
-            local w = math.max(startSize.X + d.X, 640)
-            local h = math.max(startSize.Y + d.Y, 420)
+            local vs = viewportSize(gui)
+            local w = math.clamp(startSize.X + d.X, math.min(640, vs.X - 16), math.max(vs.X - 16, 240))
+            local h = math.clamp(startSize.Y + d.Y, math.min(420, vs.Y - 16), math.max(vs.Y - 16, 240))
             main.Size = UDim2.fromOffset(w, h)
+            self._wantSize = main.Size
             main.Position = UDim2.new(
                 startPos.X.Scale, startPos.X.Offset + (w - startSize.X) / 2,
                 startPos.Y.Scale, startPos.Y.Offset + (h - startSize.Y) / 2
@@ -4248,11 +4262,13 @@ function SAR:CreateWindow(opts)
         if self._destroyed then
             return
         end
+        local vs = viewportSize(gui)
+        dragTarget = nil
         if self._autoSize then
-            dragTarget = nil
-            main.Size = defaultWindowSize(viewportSize(gui))
+            main.Size = defaultWindowSize(vs)
             main.Position = UDim2.fromScale(0.5, 0.5)
         else
+            main.Size = fitWindowSize(self._wantSize or main.Size, vs)
             main.Position = clampOnScreen(main.Position)
         end
         self:_layout(true)
