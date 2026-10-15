@@ -21,8 +21,9 @@
         the window fits the screen automatically (portrait and landscape). the tab list
         is never hidden. when the window gets narrow the tab list just gets slimmer and the
         right rail (quick buttons) turns into a slide-in drawer, grid button in the top bar.
-        short windows (phone in landscape) drop the rail titles, footer and profile card to
-        give the pages more height.
+        short windows (phone in landscape) drop the rail titles to give the pages more height.
+        on small windows the profile card turns into a slim card in the bottom right corner
+        (avatar, name, username, fps / ping). Settings > "Show profile" still toggles it.
         controls get bigger touch targets on touch devices, sliders / color pickers no
         longer fight with page scrolling, and key chips are hidden when there is no keyboard.
         Compact = true / false      force the compact layout on or off (default: automatic)
@@ -48,7 +49,7 @@
         DisplayName, Username, UserId, Game   (Game overrides the auto detected game name)
 ]]
 
-local SAR = { Version = "1.5.1", Windows = {} }
+local SAR = { Version = "1.5.2", Windows = {} }
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
@@ -2639,15 +2640,81 @@ function Window:_mainSize()
     return Vector2.new(s.X.Scale * vs.X + s.X.Offset, s.Y.Scale * vs.Y + s.Y.Offset)
 end
 
--- profile card only shows when there is room for it
+-- profile card: full card on big windows, slim card in the bottom right on small ones
+local SLIM_H = 36
+local SLIM_RESERVE = 44
+
 function Window:_refreshProfile()
-    if not self._profile then
+    local p = self._profile
+    if not p then
         return
     end
-    local show = self._profileWanted ~= false and not self._compact and not self._short
-    self._profile.Visible = show
-    local bottom = show and PROFILE_H or (self._short and 0 or FOOTER_H)
+    local parts = self._profileParts
+    local wanted = self._profileWanted ~= false
+    local slim = self._compact or self._short
+    p.Visible = wanted
+
+    local bottom
+    if not wanted then
+        bottom = self._short and 0 or FOOTER_H
+    elseif slim then
+        bottom = SLIM_RESERVE
+        local w = math.clamp((self._midW or 300) - 70, 140, 196)
+        p.AnchorPoint = Vector2.new(1, 1)
+        p.Position = UDim2.new(1, -8, 1, -4)
+        p.Size = UDim2.fromOffset(w, SLIM_H)
+
+        parts.avatar.Size = UDim2.fromOffset(26, 26)
+        parts.avatar.Position = UDim2.new(0, 6, 0.5, 0)
+        parts.name.TextSize = 12
+        parts.name.Size = UDim2.new(1, -96, 0, 15)
+        parts.name.Position = UDim2.new(0, 38, 0, 4)
+        parts.user.TextSize = 11
+        parts.user.Size = UDim2.new(1, -96, 0, 13)
+        parts.user.Position = UDim2.new(0, 38, 0, 19)
+        parts.game.Visible = false
+        parts.stats.TextSize = 11
+        parts.stats.Size = UDim2.fromOffset(52, 28)
+        parts.stats.Position = UDim2.new(1, -6, 0.5, 0)
+        parts.stats.Visible = self._showStats
+    else
+        bottom = PROFILE_H
+        p.AnchorPoint = Vector2.new(0.5, 1)
+        p.Position = UDim2.new(0.5, 0, 1, -(FOOTER_H + 2))
+        p.Size = UDim2.new(1, -28, 0, 68)
+
+        parts.avatar.Size = UDim2.fromOffset(38, 38)
+        parts.avatar.Position = UDim2.new(0, 8, 0.5, 0)
+        parts.name.TextSize = 15
+        parts.name.Size = UDim2.new(1, -140, 0, 18)
+        parts.name.Position = UDim2.new(0, 56, 0, 9)
+        parts.user.TextSize = 13
+        parts.user.Size = UDim2.new(1, -140, 0, 14)
+        parts.user.Position = UDim2.new(0, 56, 0, 27)
+        parts.game.Visible = true
+        parts.stats.TextSize = 12
+        parts.stats.Size = UDim2.fromOffset(66, 34)
+        parts.stats.Position = UDim2.new(1, -12, 0.5, 0)
+        parts.stats.Visible = self._showStats
+    end
     self._pages.Size = UDim2.new(1, 0, 1, -(41 + bottom))
+
+    -- "SAR UI" footer: centered at the bottom normally, left of the slim card when it's shown
+    local f = self._footer
+    if f then
+        f.Visible = not self._short
+        if wanted and slim then
+            f.AnchorPoint = Vector2.new(0, 1)
+            f.Position = UDim2.new(0, 12, 1, -((SLIM_RESERVE - 16) / 2))
+            f.Size = UDim2.new(0, 60, 0, 16)
+            f.TextXAlignment = Enum.TextXAlignment.Left
+        else
+            f.AnchorPoint = Vector2.new(0.5, 1)
+            f.Position = UDim2.new(0.5, 0, 1, -5)
+            f.Size = UDim2.new(1, 0, 0, 16)
+            f.TextXAlignment = Enum.TextXAlignment.Center
+        end
+    end
 end
 
 -- slides the rails in / out (compact layout) and fades the scrim behind them
@@ -2771,6 +2838,7 @@ function Window:_layout(force)
         right.ZIndex = 10
         mid.Position = UDim2.new(0, lw, 0, 0)
         mid.Size = UDim2.new(1, -lw, 1, 0)
+        self._midW = ms.X - lw
         self:_placeDrawers(false)
     else
         self._drawer = nil
@@ -2788,6 +2856,7 @@ function Window:_layout(force)
         right.ZIndex = 1
         mid.Position = UDim2.new(0, lw, 0, 0)
         mid.Size = UDim2.new(1, -(lw + rw), 1, 0)
+        self._midW = ms.X - (lw + rw)
         scrim.Visible = false
         scrim.BackgroundTransparency = 1
     end
@@ -2814,9 +2883,6 @@ function Window:_layout(force)
         if r.noResults then
             r.noResults.Position = UDim2.new(0, 8, 0, y + 8)
         end
-    end
-    if self._footer then
-        self._footer.Visible = not short
     end
     self:_refreshProfile()
 end
@@ -2989,7 +3055,7 @@ function Window:CreateSettingsTab(opts)
     })
     ui:Toggle({
         Title = "Show profile",
-        Desc = "Hidden automatically when the window is small",
+        Desc = "Slim card in the bottom right when the window is small",
         Default = true,
         CallOnCreate = false,
         Callback = function(v)
@@ -3983,6 +4049,8 @@ function SAR:CreateWindow(opts)
     self._profileName = nameLabel
     self._profileUser = userLabel
     self._profileGame = gameLabel
+    self._profileParts = { avatar = avatar, name = nameLabel, user = userLabel, game = gameLabel, stats = statsLabel }
+    self._showStats = opts.ShowStats ~= false
 
     -- real game name from the marketplace (falls back to game.Name above)
     task.spawn(function()
