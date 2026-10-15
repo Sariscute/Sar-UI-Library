@@ -1,0 +1,1281 @@
+--[[
+    SAR UI - full feature demo
+
+    Uses every element and every window function in the library:
+      elements : Label, Paragraph, Divider, Button, Toggle, Slider, Dropdown (single + multi),
+                 Input (text / numeric / multiline), Keybind, ColorPicker, Section (collapsible + nested)
+      window   : Tab, Channel, SelectTab, Notify, Dialog, Toggle, SetTheme, SetAccent, SetTransparency,
+                 SetTitle, SetProfile, SetProfileVisible, SaveConfig, LoadConfig, DeleteConfig,
+                 ListConfigs, GetFlag, CreateSettingsTab, Destroy
+      library  : SAR:AddTheme, SAR:Notify, SAR:DestroyAll
+      layout   : left rail (tabs + extras), channels + pages + profile (middle), right rail (quick buttons)
+
+    The Player / World / Teleport tabs do real things (speed, jump, noclip, fov, fullbright, teleport, spectate).
+    RightShift hides / shows the UI.
+]]
+
+local SAR = loadstring(game:HttpGet("https://raw.githubusercontent.com/Sariscute/Sar-UI-Library/refs/heads/main/second%20ver"))()
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Lighting = game:GetService("Lighting")
+local TeleportService = game:GetService("TeleportService")
+
+local LocalPlayer = Players.LocalPlayer
+local REPO_URL = "https://github.com/Sariscute/Sar-UI-Library"
+
+---------------------------------------------------------------- helpers
+
+local function getCamera()
+    return workspace.CurrentCamera
+end
+
+local function getHumanoid()
+    local char = LocalPlayer.Character
+    return char and char:FindFirstChildOfClass("Humanoid")
+end
+
+local function getRoot()
+    local char = LocalPlayer.Character
+    return char and char:FindFirstChild("HumanoidRootPart")
+end
+
+local function copyText(text)
+    if typeof(setclipboard) == "function" then
+        setclipboard(text)
+        return true
+    end
+    return false
+end
+
+local connections = {}
+local function track(conn)
+    table.insert(connections, conn)
+    return conn
+end
+
+local State = {
+    WalkSpeed = 16,
+    JumpPower = 50,
+    MoveEdited = false,
+    InfiniteJump = false,
+    Noclip = false,
+}
+
+-- values restored when the UI is destroyed
+local Original = {
+    Brightness = Lighting.Brightness,
+    ClockTime = Lighting.ClockTime,
+    FogEnd = Lighting.FogEnd,
+    GlobalShadows = Lighting.GlobalShadows,
+    Ambient = Lighting.Ambient,
+    OutdoorAmbient = Lighting.OutdoorAmbient,
+    FieldOfView = getCamera().FieldOfView,
+    Gravity = workspace.Gravity,
+}
+
+local function cleanup()
+    for _, c in ipairs(connections) do
+        c:Disconnect()
+    end
+    table.clear(connections)
+    State.InfiniteJump = false
+    State.Noclip = false
+    for prop, value in pairs(Original) do
+        pcall(function()
+            if prop == "FieldOfView" then
+                getCamera().FieldOfView = value
+            elseif prop == "Gravity" then
+                workspace.Gravity = value
+            else
+                Lighting[prop] = value
+            end
+        end)
+    end
+    local hum = getHumanoid()
+    if hum then
+        getCamera().CameraSubject = hum
+    end
+end
+
+local function applyMovement()
+    if not State.MoveEdited then
+        return
+    end
+    local hum = getHumanoid()
+    if not hum then
+        return
+    end
+    hum.WalkSpeed = State.WalkSpeed
+    if hum.UseJumpPower then
+        hum.JumpPower = State.JumpPower
+    else
+        hum.JumpHeight = State.JumpPower ^ 2 / (2 * workspace.Gravity)
+    end
+end
+
+local function otherPlayers()
+    local names = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            table.insert(names, p.Name)
+        end
+    end
+    table.sort(names)
+    return names
+end
+
+local function findPlayer(partial)
+    partial = partial:lower()
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            if p.Name:lower():sub(1, #partial) == partial or p.DisplayName:lower():sub(1, #partial) == partial then
+                return p
+            end
+        end
+    end
+end
+
+---------------------------------------------------------------- gameplay connections
+
+track(UserInputService.JumpRequest:Connect(function()
+    if State.InfiniteJump then
+        local hum = getHumanoid()
+        if hum then
+            hum:ChangeState(Enum.HumanoidStateType.Jumping)
+        end
+    end
+end))
+
+track(RunService.Stepped:Connect(function()
+    if State.Noclip then
+        local char = LocalPlayer.Character
+        if char then
+            for _, part in ipairs(char:GetDescendants()) do
+                if part:IsA("BasePart") and part.CanCollide then
+                    part.CanCollide = false
+                end
+            end
+        end
+    end
+end))
+
+track(LocalPlayer.CharacterAdded:Connect(function(char)
+    char:WaitForChild("Humanoid", 5)
+    task.wait(0.3)
+    applyMovement()
+end))
+
+---------------------------------------------------------------- custom theme (must exist before the settings tab is built)
+
+SAR:AddTheme("Ocean", {
+    Background = Color3.fromRGB(10, 18, 24),
+    Topbar = Color3.fromRGB(14, 25, 33),
+    Sidebar = Color3.fromRGB(12, 21, 28),
+    Panel = Color3.fromRGB(10, 18, 24),
+    Element = Color3.fromRGB(19, 32, 42),
+    ElementHover = Color3.fromRGB(26, 43, 56),
+    Field = Color3.fromRGB(14, 25, 33),
+    Track = Color3.fromRGB(38, 62, 80),
+    Outline = Color3.fromRGB(33, 55, 72),
+    Accent = Color3.fromRGB(64, 170, 220),
+})
+
+local themeNames = {}
+for name in pairs(SAR.Themes) do
+    table.insert(themeNames, name)
+end
+table.sort(themeNames)
+
+---------------------------------------------------------------- window
+
+local Window = SAR:CreateWindow({
+    Title = "SAR UI",
+    Subtitle = "full demo",
+    Theme = "Dark",
+    ToggleKey = Enum.KeyCode.RightShift,
+    Folder = "SAR_UI_Demo",
+    LeftTitle = "Tabs",
+    RightTitle = "Quick",
+    LeftWidth = 160,
+    RightWidth = 176,
+    FloatingButton = true,
+    ShowStats = true,
+    ShowProfile = true,
+    Resizable = true,
+    CloseConfirm = true,
+    OnDestroy = cleanup,
+})
+
+local function notify(title, content, kind, duration)
+    return Window:Notify({ Title = title, Content = content, Type = kind or "Info", Duration = duration or 3 })
+end
+
+-- theme + toggles are mirrored between the tabs and the right rail
+local accentPicker, themeDropdown, railThemeDropdown
+local noclipToggle, railNoclip, jumpToggle, railJump
+
+local function applyTheme(name)
+    Window:SetTheme(name)
+    if themeDropdown then
+        themeDropdown:Set(name, true)
+    end
+    if railThemeDropdown then
+        railThemeDropdown:Set(name, true)
+    end
+    if accentPicker then
+        accentPicker:Set(Window.Theme.Accent, true)
+    end
+end
+
+local function setNoclip(value)
+    State.Noclip = value
+    if noclipToggle then
+        noclipToggle:Set(value, true)
+    end
+    if railNoclip then
+        railNoclip:Set(value, true)
+    end
+end
+
+local function setInfiniteJump(value)
+    State.InfiniteJump = value
+    if jumpToggle then
+        jumpToggle:Set(value, true)
+    end
+    if railJump then
+        railJump:Set(value, true)
+    end
+end
+
+---------------------------------------------------------------- TAB 1: Player (real gameplay features)
+
+local PlayerTab = Window:Tab({ Title = "Player", Icon = "P" })
+
+local Movement = PlayerTab:Channel("movement")
+local Character = PlayerTab:Channel("character")
+
+local speedSec = Movement:Section({ Title = "Speed and jump" })
+do
+    local hum = getHumanoid()
+    local startSpeed = hum and math.floor(hum.WalkSpeed + 0.5) or 16
+    local startJump = (hum and hum.UseJumpPower) and math.floor(hum.JumpPower + 0.5) or 50
+
+    speedSec:Slider({
+        Title = "WalkSpeed",
+        Desc = "Applied to your humanoid, re-applied after respawn",
+        Min = 0, Max = 200, Increment = 1,
+        Default = startSpeed,
+        Flag = "walkspeed",
+        CallOnCreate = false,
+        Callback = function(v)
+            State.WalkSpeed = v
+            State.MoveEdited = true
+            applyMovement()
+        end,
+    })
+    speedSec:Slider({
+        Title = "Jump power",
+        Min = 0, Max = 300, Increment = 5,
+        Default = startJump,
+        Flag = "jumppower",
+        CallOnCreate = false,
+        Callback = function(v)
+            State.JumpPower = v
+            State.MoveEdited = true
+            applyMovement()
+        end,
+    })
+    speedSec:Button({
+        Title = "Reset speed and jump",
+        Callback = function()
+            State.WalkSpeed, State.JumpPower = 16, 50
+            State.MoveEdited = true
+            applyMovement()
+            notify("Reset", "WalkSpeed 16, jump power 50", "Success")
+        end,
+    })
+end
+
+local abilitySec = Movement:Section({ Title = "Abilities" })
+jumpToggle = abilitySec:Toggle({
+    Title = "Infinite jump",
+    Desc = "Jump again while in the air",
+    Flag = "infjump",
+    Callback = setInfiniteJump,
+})
+noclipToggle = abilitySec:Toggle({
+    Title = "Noclip",
+    Desc = "Walk through walls (hotkey below)",
+    Flag = "noclip",
+    Callback = setNoclip,
+})
+abilitySec:Keybind({
+    Title = "Noclip hotkey",
+    Desc = "Press the key to flip noclip, click the box to rebind",
+    Default = Enum.KeyCode.N,
+    Flag = "noclip_key",
+    Callback = function()
+        setNoclip(not State.Noclip)
+        notify("Noclip", State.Noclip and "enabled" or "disabled", State.Noclip and "Success" or "Warning", 1.5)
+    end,
+    ChangedCallback = function(key)
+        notify("Hotkey changed", key and key.Name or "unbound", "Info", 2)
+    end,
+})
+
+Character:Button({
+    Title = "Heal",
+    Desc = "Sets health to max",
+    Callback = function()
+        local hum = getHumanoid()
+        if hum then
+            hum.Health = hum.MaxHealth
+            notify("Healed", nil, "Success", 2)
+        end
+    end,
+})
+Character:Button({
+    Title = "Reset character",
+    Callback = function()
+        local hum = getHumanoid()
+        if hum then
+            hum.Health = 0
+        end
+    end,
+})
+Character:Toggle({
+    Title = "Anchor character",
+    Desc = "Freezes you in place",
+    Callback = function(v)
+        local root = getRoot()
+        if root then
+            root.Anchored = v
+        end
+    end,
+})
+Character:Input({
+    Title = "Hip height",
+    Desc = "Numbers only, press Enter to apply",
+    Placeholder = "2",
+    Numeric = true,
+    OnEnterOnly = true,
+    Callback = function(text)
+        local n = tonumber(text)
+        local hum = getHumanoid()
+        if n and hum then
+            hum.HipHeight = n
+        end
+    end,
+})
+Character:Dropdown({
+    Title = "Camera mode",
+    Values = { "Classic", "LockFirstPerson" },
+    Default = "Classic",
+    CallOnCreate = false,
+    Callback = function(v)
+        LocalPlayer.CameraMode = Enum.CameraMode[v]
+    end,
+})
+
+---------------------------------------------------------------- TAB 2: World
+
+local WorldTab = Window:Tab({ Title = "World", Icon = "W" })
+local Lights = WorldTab:Channel("lighting")
+local Cam = WorldTab:Channel("camera")
+
+local function setFullbright(on)
+    if on then
+        Lighting.Brightness = 2
+        Lighting.FogEnd = 1e6
+        Lighting.GlobalShadows = false
+        Lighting.Ambient = Color3.fromRGB(178, 178, 178)
+        Lighting.OutdoorAmbient = Color3.fromRGB(178, 178, 178)
+    else
+        Lighting.Brightness = Original.Brightness
+        Lighting.FogEnd = Original.FogEnd
+        Lighting.GlobalShadows = Original.GlobalShadows
+        Lighting.Ambient = Original.Ambient
+        Lighting.OutdoorAmbient = Original.OutdoorAmbient
+    end
+end
+
+Lights:Toggle({
+    Title = "Fullbright",
+    Desc = "Removes shadows and fog",
+    Flag = "fullbright",
+    Callback = setFullbright,
+})
+Lights:Slider({
+    Title = "Time of day",
+    Min = 0, Max = 24, Increment = 0.5,
+    Default = math.floor(Lighting.ClockTime * 2 + 0.5) / 2,
+    Suffix = "h",
+    Flag = "clocktime",
+    CallOnCreate = false,
+    Callback = function(v)
+        Lighting.ClockTime = v
+    end,
+})
+Lights:ColorPicker({
+    Title = "Ambient color",
+    Default = Lighting.Ambient,
+    Flag = "ambient",
+    CallOnCreate = false,
+    Callback = function(c)
+        Lighting.Ambient = c
+    end,
+})
+Lights:Button({
+    Title = "Restore lighting",
+    Callback = function()
+        for _, prop in ipairs({ "Brightness", "ClockTime", "FogEnd", "GlobalShadows", "Ambient", "OutdoorAmbient" }) do
+            Lighting[prop] = Original[prop]
+        end
+        notify("Lighting restored", nil, "Success", 2)
+    end,
+})
+
+Cam:Slider({
+    Title = "Field of view",
+    Min = 30, Max = 120, Increment = 1,
+    Default = math.floor(Original.FieldOfView + 0.5),
+    Flag = "fov",
+    CallOnCreate = false,
+    Callback = function(v)
+        getCamera().FieldOfView = v
+    end,
+})
+Cam:Slider({
+    Title = "Gravity",
+    Min = 0, Max = 400, Increment = 1,
+    Default = math.floor(Original.Gravity + 0.5),
+    Flag = "gravity",
+    CallOnCreate = false,
+    Callback = function(v)
+        workspace.Gravity = v
+    end,
+})
+
+---------------------------------------------------------------- TAB 3: Teleport
+
+local TeleTab = Window:Tab({ Title = "Teleport", Icon = "T" })
+local Targets = TeleTab:Channel("players")
+
+local playersLabel -- lives in the right rail, filled in below
+local playerDropdown
+
+local function getTarget()
+    local name = playerDropdown and playerDropdown:Get()
+    local p = name and Players:FindFirstChild(name)
+    if p and p:IsA("Player") then
+        return p
+    end
+end
+
+local function refreshPlayers()
+    playerDropdown:Refresh(otherPlayers(), true)
+    if playersLabel then
+        playersLabel:Set("Players in server: " .. #Players:GetPlayers())
+    end
+end
+
+playerDropdown = Targets:Dropdown({
+    Title = "Target player",
+    Desc = "List updates when people join or leave",
+    Values = otherPlayers(),
+    Placeholder = "pick a player",
+})
+Targets:Button({
+    Title = "Teleport to player",
+    Callback = function()
+        local target = getTarget()
+        local root = getRoot()
+        local targetRoot = target and target.Character and target.Character:FindFirstChild("HumanoidRootPart")
+        if root and targetRoot then
+            root.CFrame = targetRoot.CFrame * CFrame.new(0, 0, 3)
+            notify("Teleported", "to " .. target.Name, "Success")
+        else
+            notify("Cannot teleport", "pick a player with a loaded character", "Warning")
+        end
+    end,
+})
+Targets:Toggle({
+    Title = "Spectate player",
+    Callback = function(v)
+        local target = getTarget()
+        local targetHum = target and target.Character and target.Character:FindFirstChildOfClass("Humanoid")
+        if v and targetHum then
+            getCamera().CameraSubject = targetHum
+        else
+            local hum = getHumanoid()
+            if hum then
+                getCamera().CameraSubject = hum
+            end
+        end
+    end,
+})
+Targets:Input({
+    Title = "Find by name",
+    Desc = "Partial name or display name, then Enter",
+    Placeholder = "start typing a name",
+    OnEnterOnly = true,
+    Callback = function(text)
+        if text == "" then
+            return
+        end
+        local p = findPlayer(text)
+        if p then
+            playerDropdown:Set(p.Name, true)
+            notify("Found player", p.DisplayName .. " (@" .. p.Name .. ")", "Success")
+        else
+            notify("No match", text, "Warning")
+        end
+    end,
+})
+Targets:Button({
+    Title = "Refresh list",
+    Callback = refreshPlayers,
+})
+
+track(Players.PlayerAdded:Connect(function()
+    task.delay(0.1, refreshPlayers)
+end))
+track(Players.PlayerRemoving:Connect(function()
+    task.delay(0.2, refreshPlayers)
+end))
+
+---------------------------------------------------------------- TAB 4: Elements (every element type)
+
+local ElementsTab = Window:Tab({ Title = "Elements", Icon = "E" })
+local Basics = ElementsTab:Channel("basics")
+local Inputs = ElementsTab:Channel("inputs")
+local Pickers = ElementsTab:Channel("pickers")
+
+-- live readout label on the input pages, so dragging sliders does not spam notifications
+local readouts = {}
+local function addReadout(container)
+    table.insert(readouts, container:Label("last change: -"))
+end
+local function report(text)
+    for _, l in ipairs(readouts) do
+        l:Set("last change: " .. text)
+    end
+end
+
+-- ===== basics: text + buttons =====
+local textSec = Basics:Section({ Title = "Text" })
+local demoLabel = textSec:Label("A plain label. Label:Set() changes it.")
+local demoParagraph = textSec:Paragraph({
+    Title = "Paragraph",
+    Content = "A title with body text under it. SetTitle and SetDesc update it.",
+})
+textSec:Divider()
+textSec:Button({
+    Title = "Label:Set()",
+    Callback = function()
+        if demoLabel then
+            demoLabel:Set("Label updated at " .. os.date("%H:%M:%S"))
+        end
+    end,
+})
+textSec:Button({
+    Title = "Paragraph:SetTitle() + SetDesc()",
+    Callback = function()
+        demoParagraph:SetTitle("Updated title")
+        demoParagraph:SetDesc("Updated body text at " .. os.date("%H:%M:%S"))
+    end,
+})
+local paragraphHidden = false
+textSec:Button({
+    Title = "Paragraph:SetVisible() flip",
+    Callback = function()
+        paragraphHidden = not paragraphHidden
+        demoParagraph:SetVisible(not paragraphHidden)
+    end,
+})
+textSec:Button({
+    Title = "Label:Destroy()",
+    Desc = "Removes the label above for good",
+    Callback = function()
+        if demoLabel then
+            demoLabel:Destroy()
+            demoLabel = nil
+        end
+    end,
+})
+
+local buttonSec = Basics:Section({ Title = "Buttons" })
+buttonSec:Button({
+    Title = "Normal button",
+    Callback = function()
+        notify("Button", "Normal button clicked")
+    end,
+})
+buttonSec:Button({
+    Title = "Button with description",
+    Desc = "Buttons can carry a second line of text",
+    Callback = function()
+        notify("Button", "Button with description clicked")
+    end,
+})
+local lockedButton = buttonSec:Button({
+    Title = "Locked button",
+    Desc = "Use the toggle below to unlock it",
+    Locked = true,
+    Callback = function()
+        notify("Unlocked", "The locked button works now", "Success")
+    end,
+})
+buttonSec:Toggle({
+    Title = "Unlock the button above",
+    Callback = function(v)
+        lockedButton:SetLocked(not v)
+    end,
+})
+local swapButton = buttonSec:Button({
+    Title = "SetCallback demo",
+    Callback = function()
+        notify("Callback #1", "Original callback")
+    end,
+})
+buttonSec:Button({
+    Title = "Swap that callback",
+    Callback = function()
+        swapButton:SetCallback(function()
+            notify("Callback #2", "Swapped with SetCallback", "Warning")
+        end)
+        notify("Swapped", "Click the button above again")
+    end,
+})
+local renamedButton = buttonSec:Button({ Title = "Rename me", Desc = "SetTitle / SetDesc" })
+buttonSec:Button({
+    Title = "Rename the button above",
+    Callback = function()
+        renamedButton:SetTitle("Renamed at " .. os.date("%H:%M:%S"))
+        renamedButton:SetDesc("Description changed too")
+    end,
+})
+
+-- ===== inputs: toggles, sliders, dropdowns, text boxes =====
+addReadout(Inputs)
+
+local toggleSec = Inputs:Section({ Title = "Toggles and sliders" })
+local demoToggle = toggleSec:Toggle({
+    Title = "Toggle",
+    Desc = "Saved in configs through its Flag",
+    Default = true,
+    Flag = "demo_toggle",
+    CallOnCreate = false,
+    Callback = function(v)
+        report("toggle = " .. tostring(v))
+    end,
+})
+toggleSec:Toggle({ Title = "Locked toggle", Locked = true })
+toggleSec:Button({
+    Title = "Toggle:Set(not value)",
+    Callback = function()
+        demoToggle:Set(not demoToggle:Get())
+    end,
+})
+local intSlider = toggleSec:Slider({
+    Title = "Integer slider",
+    Min = 0, Max = 100, Increment = 5,
+    Default = 50,
+    Suffix = "%",
+    Flag = "demo_slider",
+    CallOnCreate = false,
+    Callback = function(v)
+        report("slider = " .. v)
+    end,
+})
+toggleSec:Slider({
+    Title = "Decimal slider",
+    Min = 0, Max = 5, Increment = 0.1,
+    Default = 1.5,
+    Suffix = "x",
+    Flag = "demo_decimal",
+    CallOnCreate = false,
+    Callback = function(v)
+        report("decimal slider = " .. v)
+    end,
+})
+toggleSec:Button({
+    Title = "Slider:Set(75)",
+    Callback = function()
+        intSlider:Set(75)
+    end,
+})
+
+local dropSec = Inputs:Section({ Title = "Dropdowns" })
+local fruitDrop = dropSec:Dropdown({
+    Title = "Single select",
+    Values = { "Apple", "Banana", "Cherry" },
+    Default = "Banana",
+    Flag = "demo_dropdown",
+    CallOnCreate = false,
+    Callback = function(v)
+        report("dropdown = " .. tostring(v))
+    end,
+})
+local multiDrop = dropSec:Dropdown({
+    Title = "Multi select",
+    Desc = "Click several options",
+    Values = { "Red", "Green", "Blue", "Yellow" },
+    Multi = true,
+    Default = { "Red", "Blue" },
+    Placeholder = "pick colors",
+    Flag = "demo_multi",
+    CallOnCreate = false,
+    Callback = function(list)
+        report("multi = " .. (#list > 0 and table.concat(list, ", ") or "none"))
+    end,
+})
+dropSec:Button({
+    Title = "Dropdown:Set('Cherry')",
+    Callback = function()
+        fruitDrop:Set("Cherry")
+    end,
+})
+dropSec:Button({
+    Title = "Dropdown:Refresh(new values)",
+    Callback = function()
+        fruitDrop:Refresh({ "Mango", "Papaya", "Kiwi" })
+    end,
+})
+dropSec:Button({
+    Title = "Dropdown:Refresh(original values)",
+    Callback = function()
+        fruitDrop:Refresh({ "Apple", "Banana", "Cherry" })
+        fruitDrop:Set("Banana", true)
+    end,
+})
+dropSec:Button({
+    Title = "Multi:Set({ Green, Yellow })",
+    Callback = function()
+        multiDrop:Set({ "Green", "Yellow" })
+    end,
+})
+
+local inputSec = Inputs:Section({ Title = "Text inputs" })
+local textInput = inputSec:Input({
+    Title = "Text input",
+    Desc = "Fires when you click away or press Enter",
+    Placeholder = "type here...",
+    Flag = "demo_text",
+    Callback = function(text)
+        report("text = '" .. text .. "'")
+    end,
+})
+inputSec:Input({
+    Title = "Numeric input",
+    Desc = "Only digits, dot and minus. Enter only.",
+    Placeholder = "0",
+    Numeric = true,
+    OnEnterOnly = true,
+    Flag = "demo_number",
+    Callback = function(text)
+        report("number = " .. text)
+    end,
+})
+inputSec:Input({
+    Title = "Multiline input",
+    Placeholder = "write something long...",
+    MultiLine = true,
+    Flag = "demo_multiline",
+    Callback = function(text)
+        report("multiline = " .. #text .. " characters")
+    end,
+})
+inputSec:Button({
+    Title = "Input:Set('Hello from code')",
+    Callback = function()
+        textInput:Set("Hello from code")
+    end,
+})
+inputSec:Button({
+    Title = "Input:Get()",
+    Callback = function()
+        notify("Input value", "'" .. textInput:Get() .. "'")
+    end,
+})
+
+-- ===== pickers: keybind, color, sections =====
+addReadout(Pickers)
+
+local pickSec = Pickers:Section({ Title = "Keybind and color" })
+pickSec:Keybind({
+    Title = "Demo keybind",
+    Desc = "Press F in game, or click the box to rebind",
+    Default = Enum.KeyCode.F,
+    Flag = "demo_key",
+    Callback = function(key)
+        notify("Keybind", key.Name .. " pressed", "Info", 1.5)
+    end,
+    ChangedCallback = function(key)
+        report("keybind = " .. (key and key.Name or "none"))
+    end,
+})
+local demoColor = pickSec:ColorPicker({
+    Title = "Color picker",
+    Desc = "Drag the box and hue bar, or type a hex code",
+    Default = Color3.fromRGB(222, 98, 74),
+    Flag = "demo_color",
+    CallOnCreate = false,
+    Callback = function(c)
+        report("color = #" .. c:ToHex())
+    end,
+})
+pickSec:Button({
+    Title = "ColorPicker:Set(green)",
+    Callback = function()
+        demoColor:Set(Color3.fromRGB(60, 190, 140))
+    end,
+})
+
+local startsClosed = Pickers:Section({ Title = "Starts collapsed", Opened = false })
+startsClosed:Label("Click the section header to expand and collapse.")
+startsClosed:Toggle({ Title = "A toggle inside a section" })
+Pickers:Button({
+    Title = "Section:SetOpen() + SetTitle()",
+    Callback = function()
+        startsClosed:SetOpen(true)
+        startsClosed:SetTitle("Opened from code")
+    end,
+})
+
+local fixedSec = Pickers:Section({ Title = "Not collapsible", Collapsible = false })
+fixedSec:Label("This header has no arrow and cannot be folded.")
+
+local outer = Pickers:Section({ Title = "Nested sections" })
+local inner = outer:Section({ Title = "Inner section" })
+inner:Toggle({ Title = "Toggle in the inner section" })
+inner:Slider({ Title = "Slider in the inner section", Min = 0, Max = 10, Default = 3 })
+outer:Divider()
+outer:Label("Back in the outer section.")
+
+---------------------------------------------------------------- TAB 5: Window (window api)
+
+local WindowTab = Window:Tab({ Title = "Window", Icon = "U" })
+local Look = WindowTab:Channel("appearance")
+local Notifs = WindowTab:Channel("notifications")
+local Dialogs = WindowTab:Channel("dialogs")
+local Profile = WindowTab:Channel("profile")
+local Nav = WindowTab:Channel("navigation")
+local Cfg = WindowTab:Channel("flags")
+
+-- appearance
+themeDropdown = Look:Dropdown({
+    Title = "Theme",
+    Desc = "Includes the custom Ocean theme added with SAR:AddTheme",
+    Values = themeNames,
+    Default = "Dark",
+    CallOnCreate = false,
+    Callback = applyTheme,
+})
+accentPicker = Look:ColorPicker({
+    Title = "Accent color",
+    Default = Window.Theme.Accent,
+    CallOnCreate = false,
+    Callback = function(c)
+        Window:SetAccent(c)
+    end,
+})
+Look:Button({
+    Title = "SetTheme with a color table",
+    Desc = "Purple accent on top of the dark base",
+    Callback = function()
+        Window:SetTheme({ Accent = Color3.fromRGB(170, 90, 255) })
+        accentPicker:Set(Window.Theme.Accent, true)
+    end,
+})
+Look:Slider({
+    Title = "Window transparency",
+    Min = 0, Max = 60, Increment = 1,
+    Default = 0,
+    Suffix = "%",
+    CallOnCreate = false,
+    Callback = function(v)
+        Window:SetTransparency(v / 100)
+    end,
+})
+Look:Input({
+    Title = "Window title",
+    Placeholder = "new title, then Enter",
+    OnEnterOnly = true,
+    Callback = function(text)
+        if text ~= "" then
+            Window:SetTitle(text)
+        end
+    end,
+})
+Look:Button({
+    Title = "Reset title",
+    Callback = function()
+        Window:SetTitle("SAR UI")
+    end,
+})
+Look:Button({
+    Title = "Window:Toggle() - hide for 3 seconds",
+    Desc = "Use the floating S button or RightShift to bring it back early",
+    Callback = function()
+        Window:Toggle(false)
+        task.delay(3, function()
+            Window:Toggle(true)
+        end)
+    end,
+})
+
+-- notifications
+Notifs:Button({
+    Title = "Info",
+    Callback = function()
+        notify("Info", "A normal notification", "Info")
+    end,
+})
+Notifs:Button({
+    Title = "Success",
+    Callback = function()
+        notify("Success", "Something worked", "Success")
+    end,
+})
+Notifs:Button({
+    Title = "Warning",
+    Callback = function()
+        notify("Warning", "Careful with this one", "Warning")
+    end,
+})
+Notifs:Button({
+    Title = "Error",
+    Callback = function()
+        notify("Error", "Something went wrong", "Error")
+    end,
+})
+local longNotif
+Notifs:Button({
+    Title = "Long notification (30s)",
+    Desc = "Click the notification itself to dismiss it",
+    Callback = function()
+        longNotif = notify("Sticky", "Stays for 30 seconds", "Info", 30)
+    end,
+})
+Notifs:Button({
+    Title = "Dismiss the long notification",
+    Callback = function()
+        if longNotif then
+            longNotif.Dismiss()
+            longNotif = nil
+        end
+    end,
+})
+Notifs:Button({
+    Title = "SAR:Notify (library-level)",
+    Callback = function()
+        SAR:Notify({ Title = "SAR:Notify", Content = "Sent through the library, not the window", Type = "Success" })
+    end,
+})
+
+-- dialogs
+Dialogs:Button({
+    Title = "Simple dialog",
+    Callback = function()
+        Window:Dialog({
+            Title = "Hello",
+            Content = "This dialog has the default OK button.",
+        })
+    end,
+})
+Dialogs:Button({
+    Title = "Confirm dialog",
+    Callback = function()
+        Window:Dialog({
+            Title = "Are you sure?",
+            Content = "Two buttons, the last one is the primary action.",
+            Buttons = {
+                { Title = "No", Callback = function() notify("Dialog", "You picked No") end },
+                { Title = "Yes", Callback = function() notify("Dialog", "You picked Yes", "Success") end },
+            },
+        })
+    end,
+})
+Dialogs:Button({
+    Title = "Danger dialog (wide)",
+    Callback = function()
+        Window:Dialog({
+            Title = "Delete everything?",
+            Content = "Custom width and a red Danger button.",
+            Width = 420,
+            Buttons = {
+                { Title = "Cancel" },
+                { Title = "Delete", Variant = "Danger", Callback = function() notify("Deleted", "(just kidding)", "Warning") end },
+            },
+        })
+    end,
+})
+
+-- profile card
+Profile:Button({
+    Title = "SetProfile - fake name",
+    Callback = function()
+        Window:SetProfile({ DisplayName = "SAR Tester", Username = "sar_tester" })
+    end,
+})
+Profile:Button({
+    Title = "SetProfile - back to me",
+    Callback = function()
+        Window:SetProfile({
+            DisplayName = LocalPlayer.DisplayName,
+            Username = LocalPlayer.Name,
+            UserId = LocalPlayer.UserId,
+        })
+    end,
+})
+Profile:Input({
+    Title = "Show another user",
+    Desc = "Type a Roblox UserId and press Enter (avatar + name)",
+    Placeholder = "1",
+    Numeric = true,
+    OnEnterOnly = true,
+    Callback = function(text)
+        local id = tonumber(text)
+        if not id then
+            return
+        end
+        local ok, name = pcall(function()
+            return Players:GetNameFromUserIdAsync(id)
+        end)
+        if ok then
+            Window:SetProfile({ DisplayName = name, Username = name, UserId = id })
+        else
+            notify("Lookup failed", "No user with that id", "Error")
+        end
+    end,
+})
+Profile:Toggle({
+    Title = "Show profile card",
+    Default = true,
+    CallOnCreate = false,
+    Callback = function(v)
+        Window:SetProfileVisible(v)
+    end,
+})
+
+-- navigation
+Nav:Button({
+    Title = "Window:SelectTab('Player')",
+    Callback = function()
+        Window:SelectTab("Player")
+    end,
+})
+Nav:Button({
+    Title = "Window:SelectTab(4)  (by index)",
+    Callback = function()
+        Window:SelectTab(4)
+    end,
+})
+Nav:Button({
+    Title = "Tab:Select()",
+    Callback = function()
+        WorldTab:Select()
+    end,
+})
+Nav:Button({
+    Title = "Tab:SelectChannel('character')",
+    Callback = function()
+        PlayerTab:SelectChannel("character")
+        Window:SelectTab(PlayerTab)
+    end,
+})
+Nav:Button({
+    Title = "Channel:Select()",
+    Callback = function()
+        Window:SelectTab(PlayerTab)
+        Movement:Select()
+    end,
+})
+local movementRenamed = false
+Nav:Button({
+    Title = "Channel:SetTitle()",
+    Desc = "Renames the Player > movement channel back and forth",
+    Callback = function()
+        movementRenamed = not movementRenamed
+        Movement:SetTitle(movementRenamed and "moving" or "movement")
+    end,
+})
+
+-- flags + configs
+Cfg:Button({
+    Title = "Print all flags",
+    Desc = "Writes every Flag value to the developer console (F9)",
+    Callback = function()
+        for flag, value in pairs(Window.Flags) do
+            local shown = typeof(value) == "table" and table.concat(value, ", ") or tostring(value)
+            print(("[SAR demo] %s = %s"):format(flag, shown))
+        end
+        notify("Flags printed", "Open the console with F9", "Info")
+    end,
+})
+Cfg:Button({
+    Title = "Window:GetFlag('walkspeed')",
+    Callback = function()
+        notify("GetFlag", "walkspeed = " .. tostring(Window:GetFlag("walkspeed")), "Info")
+    end,
+})
+Cfg:Button({
+    Title = "SaveConfig('demo')",
+    Callback = function()
+        local ok, err = Window:SaveConfig("demo")
+        notify(ok and "Saved" or "Save failed", ok and "Config 'demo' saved" or tostring(err), ok and "Success" or "Error")
+    end,
+})
+Cfg:Button({
+    Title = "LoadConfig('demo')",
+    Callback = function()
+        local ok, err = Window:LoadConfig("demo")
+        notify(ok and "Loaded" or "Load failed", ok and "Config 'demo' loaded" or tostring(err), ok and "Success" or "Error")
+    end,
+})
+Cfg:Button({
+    Title = "DeleteConfig('demo')",
+    Callback = function()
+        local ok, err = Window:DeleteConfig("demo")
+        notify(ok and "Deleted" or "Delete failed", ok and "Config 'demo' deleted" or tostring(err), ok and "Warning" or "Error")
+    end,
+})
+Cfg:Button({
+    Title = "ListConfigs()",
+    Callback = function()
+        local names = Window:ListConfigs()
+        notify("Saved configs", #names > 0 and table.concat(names, ", ") or "none yet", "Info", 4)
+    end,
+})
+Cfg:Button({
+    Title = "SAR:DestroyAll()",
+    Desc = "Closes every SAR window",
+    Callback = function()
+        Window:Dialog({
+            Title = "Destroy all windows",
+            Content = "This removes every SAR UI window.",
+            Buttons = {
+                { Title = "Cancel" },
+                { Title = "Destroy", Variant = "Danger", Callback = function() SAR:DestroyAll() end },
+            },
+        })
+    end,
+})
+
+---------------------------------------------------------------- TAB 6: About (tab-level shortcuts use the default channel)
+
+local AboutTab = Window:Tab({ Title = "About", Icon = "i", DefaultChannel = "info" })
+
+-- these elements are called straight on the tab, they land in the "info" channel
+AboutTab:Paragraph({
+    Title = "SAR UI " .. SAR.Version,
+    Content = "Left rail = tabs, middle = channels + pages + profile, right rail = quick buttons.",
+})
+AboutTab:Label("Tab:Label, Tab:Paragraph, Tab:Button... all forward to the tab's default channel.")
+AboutTab:Divider()
+AboutTab:Button({
+    Title = "Copy GitHub link",
+    Callback = function()
+        if copyText(REPO_URL) then
+            notify("Copied", REPO_URL, "Success")
+        else
+            notify("No clipboard", "Your executor has no setclipboard", "Warning")
+        end
+    end,
+})
+local aboutSec = AboutTab:Section({ Title = "Controls" })
+aboutSec:Label("RightShift - hide / show the UI (rebind it in Settings)")
+aboutSec:Label("N - noclip (rebind it in Player > movement)")
+aboutSec:Label("Drag the top bar to move, the bottom-right corner to resize")
+
+local Credits = AboutTab:Channel("credits")
+Credits:Paragraph({
+    Title = "Demo script",
+    Content = "Every element and window function of the library is used somewhere in this window.",
+})
+
+---------------------------------------------------------------- settings tab (theme, accent, toggle key, transparency, configs)
+
+Window:CreateSettingsTab({ Title = "Settings", Icon = "S" })
+
+---------------------------------------------------------------- left rail extras (below the tabs)
+
+Window.Left:Divider()
+Window.Left:Label("RightShift hides / shows the UI")
+Window.Left:Toggle({
+    Title = "Profile card",
+    Default = true,
+    CallOnCreate = false,
+    Callback = function(v)
+        Window:SetProfileVisible(v)
+    end,
+})
+Window.Left:Button({
+    Title = "Say hi",
+    Callback = function()
+        notify("Hi " .. LocalPlayer.DisplayName, "Sent from the left rail", "Info")
+    end,
+})
+
+---------------------------------------------------------------- right rail (quick actions)
+
+Window.Right:Button({
+    Title = "Reset character",
+    Callback = function()
+        local hum = getHumanoid()
+        if hum then
+            hum.Health = 0
+        end
+    end,
+})
+Window.Right:Button({
+    Title = "Rejoin server",
+    Callback = function()
+        Window:Dialog({
+            Title = "Rejoin server",
+            Content = "Teleport back into this server?",
+            Buttons = {
+                { Title = "Cancel" },
+                {
+                    Title = "Rejoin",
+                    Callback = function()
+                        if #Players:GetPlayers() <= 1 then
+                            TeleportService:Teleport(game.PlaceId, LocalPlayer)
+                        else
+                            TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+                        end
+                    end,
+                },
+            },
+        })
+    end,
+})
+Window.Right:Button({
+    Title = "Copy place ID",
+    Callback = function()
+        if copyText(tostring(game.PlaceId)) then
+            notify("Copied", tostring(game.PlaceId), "Success", 2)
+        else
+            notify("No clipboard", "Your executor has no setclipboard", "Warning")
+        end
+    end,
+})
+Window.Right:Divider()
+railNoclip = Window.Right:Toggle({ Title = "Noclip", Callback = setNoclip })
+railJump = Window.Right:Toggle({ Title = "Infinite jump", Callback = setInfiniteJump })
+Window.Right:Divider()
+railThemeDropdown = Window.Right:Dropdown({
+    Title = "Theme",
+    Values = themeNames,
+    Default = "Dark",
+    CallOnCreate = false,
+    Callback = applyTheme,
+})
+playersLabel = Window.Right:Label("Players in server: " .. #Players:GetPlayers())
+
+---------------------------------------------------------------- done
+
+notify("SAR UI loaded", "Press RightShift to hide or show the window", "Success", 5)
