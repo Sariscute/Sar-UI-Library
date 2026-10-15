@@ -17,6 +17,17 @@
         LoadingScreen = false   skip the loading screen
         LoadingTime = 2.8       loading screen length in seconds
 
+    mobile / small screens:
+        the window fits the screen automatically. when it gets narrow (or on a phone in
+        landscape) the side rails turn into slide-in drawers:
+            menu button (top left)  = tabs + search
+            grid button (top right) = quick buttons
+        controls get bigger touch targets on touch devices, sliders / color pickers no
+        longer fight with page scrolling, and key chips are hidden when there is no keyboard.
+        Compact = true / false      force the compact layout on or off (default: automatic)
+        CompactBreakpoint = 680     window width under which the compact layout kicks in
+        window:SetLayout("Auto" | "Compact" | "Desktop")
+
     elements (Channel, Section, Window.Left, Window.Right):
         Label, Paragraph, Button, Toggle, Slider, Dropdown, Input,
         Keybind, ColorPicker, Divider, Section
@@ -28,7 +39,7 @@
 
     window:
         Tab, SelectTab, Search, Notify, Dialog, Toggle, SetTheme, SetAccent,
-        SetTransparency, SetTitle, SetProfile, SetProfileVisible,
+        SetTransparency, SetTitle, SetProfile, SetProfileVisible, SetLayout,
         SaveConfig, LoadConfig, DeleteConfig, ListConfigs,
         CreateSettingsTab, Destroy
 
@@ -36,7 +47,7 @@
         DisplayName, Username, UserId, Game   (Game overrides the auto detected game name)
 ]]
 
-local SAR = { Version = "1.4.0", Windows = {} }
+local SAR = { Version = "1.5.0", Windows = {} }
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
@@ -52,6 +63,18 @@ local LocalPlayer = Players.LocalPlayer
 local FONT_REG = Enum.Font.Ubuntu
 local FONT_MED = Enum.Font.Ubuntu
 local FONT_BOLD = Enum.Font.Ubuntu
+
+-- phones / tablets without a keyboard get bigger touch targets and no hover effects
+local TOUCH = UserInputService.TouchEnabled
+local MOBILE = TOUCH and not UserInputService.KeyboardEnabled
+
+-- sz(desktop, mobile) picks a size depending on the device
+local function sz(desktop, mobile)
+    if MOBILE then
+        return mobile
+    end
+    return desktop
+end
 
 -- bottom of the middle column: profile card (68) + gaps + the SAR UI footer
 local FOOTER_H = 24
@@ -178,6 +201,25 @@ local function decodeValue(v)
         return v.n and Enum.KeyCode[v.n] or nil
     end
     return v
+end
+
+-- size of the screen the gui lives on (falls back to the camera before the gui has laid out)
+local function viewportSize(gui)
+    local a = gui and gui.AbsoluteSize
+    if a and a.X > 0 and a.Y > 0 then
+        return a
+    end
+    local cam = workspace.CurrentCamera
+    return cam and cam.ViewportSize or Vector2.new(1280, 720)
+end
+
+-- window size when the script doesn't pass one: fills small screens, caps on big ones
+local function defaultWindowSize(vs)
+    if vs.X < 720 then
+        return UDim2.fromOffset(math.max(vs.X - 16, 240), math.max(math.min(vs.Y - 16, 720), 240))
+    end
+    local margin = sz(24, 12)
+    return UDim2.fromOffset(math.min(860, vs.X - margin), math.max(math.min(540, vs.Y - margin), 240))
 end
 
 local Window = {}
@@ -317,6 +359,13 @@ local function sizeMin(parent, x, y)
     return c
 end
 
+local function sizeMax(parent, x, y)
+    local c = Instance.new("UISizeConstraint")
+    c.MaxSize = Vector2.new(x, y)
+    c.Parent = parent
+    return c
+end
+
 local function textLabel(win, props, colorKey)
     props.BackgroundTransparency = 1
     props.BorderSizePixel = 0
@@ -391,9 +440,22 @@ local function setIconColor(icon, color)
     end
 end
 
--- onStart can return false to cancel the drag, returns a function telling if a drag is active
+-- onStart can return false to cancel the drag, returns a function telling if a drag is active.
+-- on touch the closest ScrollingFrame is frozen while dragging, otherwise sliders and color
+-- pickers would scroll the page instead of following the finger
 local function bindDrag(win, hit, onMove, onStart)
     local dragging = false
+    local frozen = nil
+
+    local function unfreeze()
+        if frozen then
+            pcall(function()
+                frozen.ScrollingEnabled = true
+            end)
+            frozen = nil
+        end
+    end
+
     hit.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             local start = onStart or onMove
@@ -401,6 +463,13 @@ local function bindDrag(win, hit, onMove, onStart)
                 return
             end
             dragging = true
+            if input.UserInputType == Enum.UserInputType.Touch then
+                local sf = hit:FindFirstAncestorWhichIsA("ScrollingFrame")
+                if sf and sf.ScrollingEnabled then
+                    sf.ScrollingEnabled = false
+                    frozen = sf
+                end
+            end
         end
     end)
     win:_connect(UserInputService.InputChanged, function(input)
@@ -414,14 +483,20 @@ local function bindDrag(win, hit, onMove, onStart)
     win:_connect(UserInputService.InputEnded, function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = false
+            unfreeze()
         end
     end)
+    hit.Destroying:Connect(unfreeze)
     return function()
         return dragging
     end
 end
 
+-- no hover on touch devices (MouseEnter fires on tap there and MouseLeave never comes)
 local function hoverEffect(win, button, base, over)
+    if MOBILE then
+        return
+    end
     base = base or "Element"
     over = over or "ElementHover"
     button.MouseEnter:Connect(function()
@@ -468,6 +543,7 @@ end
 -- adds the key chip to a card header and wires the key press.
 -- offset   : pixels from the right edge of the header where the chip sits
 -- handlers : { Modes = bool, Press = fn(mode), Release = fn() }
+-- the chip is hidden on devices without a keyboard, the key logic still works
 local function attachKeybind(win, el, opts, offset, handlers)
     local key = toKeyCode(opts.Keybind)
     local mode = (handlers.Modes and opts.KeybindMode == "Hold") and "Hold" or "Toggle"
@@ -486,6 +562,7 @@ local function attachKeybind(win, el, opts, offset, handlers)
         AnchorPoint = Vector2.new(1, 0.5),
         Position = UDim2.new(1, -offset, 0.5, 0),
         BorderSizePixel = 0,
+        Visible = not MOBILE,
         Parent = el.Header,
     }, { BackgroundColor3 = "Field" })
     corner(chip, 4)
@@ -719,7 +796,7 @@ local function newCard(container, opts)
     stroke(win, card, "Outline")
     pad(card, 12, 10, 12, 10)
     list(card, 8)
-    sizeMin(card, 0, 42)
+    sizeMin(card, 0, sz(42, 48))
 
     local header = create(win, "Frame", {
         Name = "Header",
@@ -729,7 +806,7 @@ local function newCard(container, opts)
         LayoutOrder = 1,
         Parent = card,
     })
-    sizeMin(header, 0, 22)
+    sizeMin(header, 0, sz(22, 26))
 
     local holder = create(win, "Frame", {
         Name = "Text",
@@ -839,11 +916,12 @@ function Container:Button(opts)
     opts = norm(opts)
     local win = self.Window
     local hasKey = opts.Keybind ~= nil and opts.Keybind ~= false
+    local showKey = hasKey and not MOBILE
     local el = newCard(self, {
         Title = opts.Title,
         Desc = opts.Desc,
         Clickable = true,
-        RightWidth = 24 + (hasKey and KEY_CHIP_W or 0),
+        RightWidth = 24 + (showKey and KEY_CHIP_W or 0),
         Locked = opts.Locked,
     })
     local card = el.Frame
@@ -886,16 +964,24 @@ function Container:Toggle(opts)
     opts = norm(opts)
     local win = self.Window
     local hasKey = opts.Keybind ~= nil and opts.Keybind ~= false
+    local showKey = hasKey and not MOBILE
+
+    -- bigger switch on touch devices
+    local trackW, trackH, knobS = 36, 18, 12
+    if MOBILE then
+        trackW, trackH, knobS = 44, 24, 18
+    end
+
     local el = newCard(self, {
         Title = opts.Title,
         Desc = opts.Desc,
         Clickable = true,
-        RightWidth = 50 + (hasKey and KEY_CHIP_W or 0),
+        RightWidth = trackW + 14 + (showKey and KEY_CHIP_W or 0),
         Locked = opts.Locked,
     })
 
     local track = create(win, "Frame", {
-        Size = UDim2.fromOffset(36, 18),
+        Size = UDim2.fromOffset(trackW, trackH),
         AnchorPoint = Vector2.new(1, 0.5),
         Position = UDim2.new(1, 0, 0.5, 0),
         BorderSizePixel = 0,
@@ -903,20 +989,20 @@ function Container:Toggle(opts)
     })
     corner(track, 4)
     local knob = create(win, "Frame", {
-        Size = UDim2.fromOffset(12, 12),
+        Size = UDim2.fromOffset(knobS, knobS),
         AnchorPoint = Vector2.new(0, 0.5),
         Position = UDim2.new(0, 3, 0.5, 0),
         BackgroundColor3 = Color3.new(1, 1, 1),
         BorderSizePixel = 0,
         Parent = track,
     })
-    corner(knob, 3)
+    corner(knob, MOBILE and 4 or 3)
 
     el.Value = opts.Default == true
 
     local function apply(animate)
         local col = el.Value and win.Theme.Accent or win.Theme.Track
-        local pos = el.Value and UDim2.new(1, -15, 0.5, 0) or UDim2.new(0, 3, 0.5, 0)
+        local pos = el.Value and UDim2.new(1, -(knobS + 3), 0.5, 0) or UDim2.new(0, 3, 0.5, 0)
         if animate then
             tween(track, { BackgroundColor3 = col }, 0.15)
             tween(knob, { Position = pos }, 0.15)
@@ -951,7 +1037,7 @@ function Container:Toggle(opts)
     end)
 
     if hasKey then
-        attachKeybind(win, el, opts, 44, {
+        attachKeybind(win, el, opts, trackW + 8, {
             Modes = true,
             Press = function(mode)
                 if mode == "Hold" then
@@ -984,9 +1070,12 @@ function Container:Slider(opts)
 
     local el = newCard(self, { Title = opts.Title, Desc = opts.Desc, Locked = opts.Locked })
 
+    local rowH = sz(20, 30)
+    local knobS = sz(12, 18)
+
     local row = create(win, "Frame", {
         BackgroundTransparency = 1,
-        Size = UDim2.new(1, 0, 0, 20),
+        Size = UDim2.new(1, 0, 0, rowH),
         LayoutOrder = 2,
         Parent = el.Frame,
     })
@@ -1005,7 +1094,7 @@ function Container:Slider(opts)
         Parent = row,
     })
     local track = create(win, "Frame", {
-        Size = UDim2.new(1, 0, 0, 4),
+        Size = UDim2.new(1, 0, 0, sz(4, 6)),
         AnchorPoint = Vector2.new(0, 0.5),
         Position = UDim2.new(0, 0, 0.5, 0),
         BorderSizePixel = 0,
@@ -1019,14 +1108,14 @@ function Container:Slider(opts)
     }, { BackgroundColor3 = "Accent" })
     corner(fill, 2)
     local knob = create(win, "Frame", {
-        Size = UDim2.fromOffset(12, 12),
+        Size = UDim2.fromOffset(knobS, knobS),
         AnchorPoint = Vector2.new(0.5, 0.5),
         Position = UDim2.new(1, 0, 0.5, 0),
         BackgroundColor3 = Color3.new(1, 1, 1),
         BorderSizePixel = 0,
         Parent = fill,
     })
-    corner(knob, 3)
+    corner(knob, MOBILE and 5 or 3)
 
     local function snap(v)
         v = math.clamp(v, min, max)
@@ -1093,10 +1182,13 @@ function Container:Dropdown(opts)
 
     local el = newCard(self, { Title = opts.Title, Desc = opts.Desc, Locked = opts.Locked })
 
+    local optH = sz(26, 34)
+    local maxListH = sz(150, 176)
+
     local select = create(win, "TextButton", {
         Text = "",
         AutoButtonColor = false,
-        Size = UDim2.new(1, 0, 0, 30),
+        Size = UDim2.new(1, 0, 0, sz(30, 38)),
         BorderSizePixel = 0,
         LayoutOrder = 2,
         Parent = el.Frame,
@@ -1143,7 +1235,7 @@ function Container:Dropdown(opts)
 
     local function listHeight()
         local n = #values
-        return math.min(n * 26 + math.max(n - 1, 0) * 3, 150)
+        return math.min(n * optH + math.max(n - 1, 0) * 3, maxListH)
     end
 
     local function isSelected(v)
@@ -1250,7 +1342,7 @@ function Container:Dropdown(opts)
                 Text = "",
                 AutoButtonColor = false,
                 BackgroundTransparency = 1,
-                Size = UDim2.new(1, -4, 0, 26),
+                Size = UDim2.new(1, -4, 0, optH),
                 BorderSizePixel = 0,
                 LayoutOrder = i,
                 Parent = scroll,
@@ -1272,16 +1364,18 @@ function Container:Dropdown(opts)
             }, "Accent")
             optionButtons[v] = { Btn = btn, Label = lbl, Check = check }
 
-            btn.MouseEnter:Connect(function()
-                if not isSelected(v) then
-                    tween(btn, { BackgroundTransparency = 0.5 }, 0.1)
-                end
-            end)
-            btn.MouseLeave:Connect(function()
-                if not isSelected(v) then
-                    tween(btn, { BackgroundTransparency = 1 }, 0.1)
-                end
-            end)
+            if not MOBILE then
+                btn.MouseEnter:Connect(function()
+                    if not isSelected(v) then
+                        tween(btn, { BackgroundTransparency = 0.5 }, 0.1)
+                    end
+                end)
+                btn.MouseLeave:Connect(function()
+                    if not isSelected(v) then
+                        tween(btn, { BackgroundTransparency = 1 }, 0.1)
+                    end
+                end)
+            end
             btn.MouseButton1Click:Connect(function()
                 if multi then
                     local cur = table.clone(el.Value)
@@ -1348,7 +1442,7 @@ function Container:Input(opts)
     local el = newCard(self, { Title = opts.Title, Desc = opts.Desc, Locked = opts.Locked })
 
     local field = create(win, "Frame", {
-        Size = UDim2.new(1, 0, 0, multiline and 80 or 30),
+        Size = UDim2.new(1, 0, 0, multiline and sz(80, 96) or sz(30, 38)),
         BorderSizePixel = 0,
         LayoutOrder = 2,
         Parent = el.Frame,
@@ -1433,7 +1527,7 @@ function Container:Keybind(opts)
     local btn = create(win, "TextButton", {
         Text = "",
         AutoButtonColor = false,
-        Size = UDim2.fromOffset(76, 22),
+        Size = UDim2.fromOffset(76, sz(22, 28)),
         AnchorPoint = Vector2.new(1, 0.5),
         Position = UDim2.new(1, 0, 0.5, 0),
         BorderSizePixel = 0,
@@ -1549,7 +1643,7 @@ function Container:ColorPicker(opts)
     local swatch = create(win, "TextButton", {
         Text = "",
         AutoButtonColor = false,
-        Size = UDim2.fromOffset(36, 20),
+        Size = UDim2.fromOffset(sz(36, 44), sz(20, 26)),
         AnchorPoint = Vector2.new(1, 0.5),
         Position = UDim2.new(1, 0, 0.5, 0),
         BorderSizePixel = 0,
@@ -1557,6 +1651,14 @@ function Container:ColorPicker(opts)
     })
     corner(swatch, 4)
     stroke(win, swatch, "Outline")
+
+    -- panel layout (bigger on touch devices)
+    local svH = sz(100, 120)
+    local hueH = sz(12, 20)
+    local hueY = svH + 8
+    local hexY = hueY + hueH + 6
+    local panelH = hexY + 24 + 2
+    local curS = sz(10, 16)
 
     local panel = create(win, "Frame", {
         BackgroundTransparency = 1,
@@ -1568,7 +1670,7 @@ function Container:ColorPicker(opts)
     })
 
     local svBox = create(win, "Frame", {
-        Size = UDim2.new(1, 0, 0, 100),
+        Size = UDim2.new(1, 0, 0, svH),
         BorderSizePixel = 0,
         Parent = panel,
     })
@@ -1602,14 +1704,14 @@ function Container:ColorPicker(opts)
         Parent = svBox,
     })
     local svCursor = create(win, "Frame", {
-        Size = UDim2.fromOffset(10, 10),
+        Size = UDim2.fromOffset(curS, curS),
         AnchorPoint = Vector2.new(0.5, 0.5),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
         ZIndex = 4,
         Parent = svBox,
     })
-    corner(svCursor, 5)
+    corner(svCursor, curS / 2)
     local cs = Instance.new("UIStroke")
     cs.Color = Color3.new(1, 1, 1)
     cs.Thickness = 2
@@ -1619,8 +1721,8 @@ function Container:ColorPicker(opts)
     local hueBar = create(win, "TextButton", {
         Text = "",
         AutoButtonColor = false,
-        Size = UDim2.new(1, 0, 0, 12),
-        Position = UDim2.new(0, 0, 0, 108),
+        Size = UDim2.new(1, 0, 0, hueH),
+        Position = UDim2.new(0, 0, 0, hueY),
         BackgroundColor3 = Color3.new(1, 1, 1),
         BorderSizePixel = 0,
         Parent = panel,
@@ -1638,7 +1740,7 @@ function Container:ColorPicker(opts)
     })
     hg.Parent = hueBar
     local hueCursor = create(win, "Frame", {
-        Size = UDim2.fromOffset(4, 16),
+        Size = UDim2.fromOffset(4, hueH + 4),
         AnchorPoint = Vector2.new(0.5, 0.5),
         Position = UDim2.fromScale(0, 0.5),
         BackgroundColor3 = Color3.new(1, 1, 1),
@@ -1654,8 +1756,8 @@ function Container:ColorPicker(opts)
     hs.Parent = hueCursor
 
     local hexField = create(win, "Frame", {
-        Size = UDim2.new(1, 0, 0, 24),
-        Position = UDim2.new(0, 0, 0, 126),
+        Size = UDim2.new(1, 0, 0, sz(24, 30)),
+        Position = UDim2.new(0, 0, 0, hexY),
         BorderSizePixel = 0,
         Parent = panel,
     }, { BackgroundColor3 = "Field" })
@@ -1672,6 +1774,9 @@ function Container:ColorPicker(opts)
         TextXAlignment = Enum.TextXAlignment.Left,
         Parent = hexField,
     }, { TextColor3 = "Text" })
+
+    -- the hex row got taller on touch, keep the panel tall enough for it
+    panelH = hexY + sz(24, 30) + 2
 
     local color = opts.Default or Color3.fromRGB(255, 255, 255)
     local h, s, v = color:ToHSV()
@@ -1742,7 +1847,7 @@ function Container:ColorPicker(opts)
         if state then
             panel.Visible = true
             panel.Size = UDim2.new(1, 0, 0, 0)
-            tween(panel, { Size = UDim2.new(1, 0, 0, 150) }, 0.18)
+            tween(panel, { Size = UDim2.new(1, 0, 0, panelH) }, 0.18)
         else
             tween(panel, { Size = UDim2.new(1, 0, 0, 0) }, 0.15)
             task.delay(0.17, function()
@@ -1778,7 +1883,7 @@ function Container:Section(opts)
         Text = "",
         AutoButtonColor = false,
         BackgroundTransparency = 1,
-        Size = UDim2.new(1, 0, 0, 22),
+        Size = UDim2.new(1, 0, 0, sz(22, 28)),
         LayoutOrder = 1,
         Parent = wrapper,
     })
@@ -1879,7 +1984,7 @@ function Tab:Channel(opts)
         Text = "",
         AutoButtonColor = false,
         AutomaticSize = Enum.AutomaticSize.X,
-        Size = UDim2.new(0, 0, 0, 28),
+        Size = UDim2.new(0, 0, 0, sz(28, 32)),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
         LayoutOrder = #self.Channels + 1,
@@ -1907,7 +2012,7 @@ function Tab:Channel(opts)
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
         Size = UDim2.fromScale(1, 1),
-        ScrollBarThickness = 3,
+        ScrollBarThickness = sz(3, 4),
         CanvasSize = UDim2.new(),
         AutomaticCanvasSize = Enum.AutomaticSize.Y,
         Visible = false,
@@ -1926,16 +2031,18 @@ function Tab:Channel(opts)
 
     table.insert(self.Channels, ch)
 
-    btn.MouseEnter:Connect(function()
-        if self.SelectedChannel ~= ch then
-            tween(btn, { BackgroundTransparency = 0.6 }, 0.1)
-        end
-    end)
-    btn.MouseLeave:Connect(function()
-        if self.SelectedChannel ~= ch then
-            tween(btn, { BackgroundTransparency = 1 }, 0.1)
-        end
-    end)
+    if not MOBILE then
+        btn.MouseEnter:Connect(function()
+            if self.SelectedChannel ~= ch then
+                tween(btn, { BackgroundTransparency = 0.6 }, 0.1)
+            end
+        end)
+        btn.MouseLeave:Connect(function()
+            if self.SelectedChannel ~= ch then
+                tween(btn, { BackgroundTransparency = 1 }, 0.1)
+            end
+        end)
+    end
     btn.MouseButton1Click:Connect(function()
         self:SelectChannel(ch)
     end)
@@ -2018,7 +2125,7 @@ function Window:Tab(opts)
         Name = "Tab_" .. title,
         Text = "",
         AutoButtonColor = false,
-        Size = UDim2.new(1, 0, 0, 34),
+        Size = UDim2.new(1, 0, 0, sz(34, 40)),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
         LayoutOrder = self.Left:_next(),
@@ -2071,18 +2178,24 @@ function Window:Tab(opts)
     tab._label = label
     tab._bar = barFrame
 
-    btn.MouseEnter:Connect(function()
-        if self.SelectedTab ~= tab then
-            tween(btn, { BackgroundTransparency = 0.6 }, 0.1)
-        end
-    end)
-    btn.MouseLeave:Connect(function()
-        if self.SelectedTab ~= tab then
-            tween(btn, { BackgroundTransparency = 1 }, 0.1)
-        end
-    end)
+    if not MOBILE then
+        btn.MouseEnter:Connect(function()
+            if self.SelectedTab ~= tab then
+                tween(btn, { BackgroundTransparency = 0.6 }, 0.1)
+            end
+        end)
+        btn.MouseLeave:Connect(function()
+            if self.SelectedTab ~= tab then
+                tween(btn, { BackgroundTransparency = 1 }, 0.1)
+            end
+        end)
+    end
     btn.MouseButton1Click:Connect(function()
         self:SelectTab(tab)
+        -- in the compact layout the tab list is a drawer, close it after picking a tab
+        if self._compact then
+            self:_setDrawer("Left", false)
+        end
     end)
 
     self:_hook(tab, function()
@@ -2286,14 +2399,16 @@ function Window:Dialog(opts)
     })
     tween(overlay, { BackgroundTransparency = 0.4 }, 0.2)
 
+    -- fills the window minus a margin on small screens, never wider than opts.Width
     local card = create(self, "Frame", {
         AnchorPoint = Vector2.new(0.5, 0.5),
         Position = UDim2.fromScale(0.5, 0.5),
-        Size = UDim2.new(0, opts.Width or 340, 0, 0),
+        Size = UDim2.new(1, -32, 0, 0),
         AutomaticSize = Enum.AutomaticSize.Y,
         BorderSizePixel = 0,
         Parent = overlay,
     }, { BackgroundColor3 = "Element" })
+    sizeMax(card, opts.Width or 340, math.huge)
     corner(card, 6)
     stroke(self, card, "Outline")
     pad(card, 18, 16, 18, 16)
@@ -2324,7 +2439,7 @@ function Window:Dialog(opts)
 
     local row = create(self, "Frame", {
         BackgroundTransparency = 1,
-        Size = UDim2.new(1, 0, 0, 34),
+        Size = UDim2.new(1, 0, 0, sz(34, 40)),
         LayoutOrder = 3,
         Parent = card,
     })
@@ -2360,7 +2475,7 @@ function Window:Dialog(opts)
             BackgroundColor3 = bg,
             AutoButtonColor = true,
             AutomaticSize = Enum.AutomaticSize.X,
-            Size = UDim2.new(0, 0, 0, 32),
+            Size = UDim2.new(0, 0, 0, sz(32, 38)),
             BorderSizePixel = 0,
             LayoutOrder = i,
             Parent = row,
@@ -2389,6 +2504,12 @@ function Window:Toggle(state)
 
     if self._openButton then
         self._openButton.Visible = (not state) and self._floating
+    end
+
+    -- drawers (compact layout) shouldn't still be open when the window comes back
+    if not state and self._drawer then
+        self._drawer = nil
+        self:_placeDrawers(false)
     end
 
     for _, shadowSpec in ipairs(self._shadowFrames or {}) do
@@ -2457,8 +2578,8 @@ function Window:SetTransparency(n)
 end
 
 function Window:SetProfileVisible(state)
-    self._profile.Visible = state
-    self._pages.Size = UDim2.new(1, 0, 1, -(41 + (state and PROFILE_H or FOOTER_H)))
+    self._profileWanted = state and true or false
+    self:_refreshProfile()
 end
 
 function Window:SetProfile(info)
@@ -2503,6 +2624,191 @@ function Window:Destroy()
     end
     self.Gui:Destroy()
     fire(self._onDestroy)
+end
+
+---------------------------------------------------------------- responsive layout
+
+-- window size in pixels (resolved against the screen, ignores the open animation scale)
+function Window:_mainSize()
+    local vs = viewportSize(self.Gui)
+    local s = self.Main.Size
+    return Vector2.new(s.X.Scale * vs.X + s.X.Offset, s.Y.Scale * vs.Y + s.Y.Offset)
+end
+
+-- profile card only shows when there is room for it
+function Window:_refreshProfile()
+    if not self._profile then
+        return
+    end
+    local show = self._profileWanted ~= false and not self._compact and not self._short
+    self._profile.Visible = show
+    self._pages.Size = UDim2.new(1, 0, 1, -(41 + (show and PROFILE_H or FOOTER_H)))
+end
+
+-- slides the rails in / out (compact layout) and fades the scrim behind them
+function Window:_placeDrawers(animate)
+    local scrim = self._scrim
+    if not scrim then
+        return
+    end
+    if not self._compact then
+        scrim.Visible = false
+        return
+    end
+
+    local function place(rail, side)
+        local open = self._drawer == side
+        local w = rail.Size.X.Offset
+        local fromRight = side == "Right"
+        local openPos = UDim2.new(fromRight and 1 or 0, 0, 0, 0)
+        local closedPos = UDim2.new(fromRight and 1 or 0, fromRight and w or -w, 0, 0)
+        if open then
+            rail.Visible = true
+            if animate then
+                tween(rail, { Position = openPos }, 0.24, Enum.EasingStyle.Quint)
+            else
+                rail.Position = openPos
+            end
+        elseif animate and rail.Visible then
+            tween(rail, { Position = closedPos }, 0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+            task.delay(0.2, function()
+                if not self._destroyed and self._compact and self._drawer ~= side then
+                    rail.Visible = false
+                end
+            end)
+        else
+            rail.Position = closedPos
+            rail.Visible = false
+        end
+    end
+    place(self._leftRail, "Left")
+    place(self._rightRail, "Right")
+
+    if self._drawer then
+        scrim.Visible = true
+        if animate then
+            tween(scrim, { BackgroundTransparency = 0.45 }, 0.2)
+        else
+            scrim.BackgroundTransparency = 0.45
+        end
+    elseif animate then
+        tween(scrim, { BackgroundTransparency = 1 }, 0.18)
+        task.delay(0.2, function()
+            if not self._destroyed and self._drawer == nil then
+                scrim.Visible = false
+            end
+        end)
+    else
+        scrim.BackgroundTransparency = 1
+        scrim.Visible = false
+    end
+end
+
+function Window:_setDrawer(side, state)
+    if not self._compact then
+        return
+    end
+    if state then
+        self._drawer = side
+    elseif self._drawer == side then
+        self._drawer = nil
+    else
+        return
+    end
+    self:_placeDrawers(true)
+end
+
+function Window:_toggleDrawer(side)
+    self:_setDrawer(side, self._drawer ~= side)
+end
+
+function Window:_closeDrawers()
+    if self._drawer then
+        self._drawer = nil
+        self:_placeDrawers(true)
+    end
+end
+
+-- picks between the desktop layout (3 columns) and the compact layout (rails become drawers)
+function Window:_layout(force)
+    if self._destroyed or not self._leftRail then
+        return
+    end
+
+    local ms = self:_mainSize()
+    local short = ms.Y < 480
+    local compact
+    if self._forceCompact ~= nil then
+        compact = self._forceCompact
+    else
+        compact = ms.X < self._breakpoint or (MOBILE and short)
+    end
+
+    local changed = compact ~= self._compact or short ~= self._short
+    self._compact, self._short = compact, short
+    if not changed and not force then
+        return
+    end
+
+    local LW, RW = self._LW, self._RW
+    local left, right, mid, scrim = self._leftRail, self._rightRail, self._mid, self._scrim
+
+    if compact then
+        local function drawerW(w)
+            return math.clamp(ms.X - 64, math.min(120, w + 24), w + 24)
+        end
+        left.Size = UDim2.new(0, drawerW(LW), 1, 0)
+        right.Size = UDim2.new(0, drawerW(RW), 1, 0)
+        left.ZIndex = 10
+        right.ZIndex = 10
+        mid.Position = UDim2.new(0, 0, 0, 0)
+        mid.Size = UDim2.fromScale(1, 1)
+        self:_placeDrawers(false)
+    else
+        self._drawer = nil
+        left.Size = UDim2.new(0, LW, 1, 0)
+        right.Size = UDim2.new(0, RW, 1, 0)
+        left.Position = UDim2.new(0, 0, 0, 0)
+        right.Position = UDim2.new(1, 0, 0, 0)
+        left.Visible = true
+        right.Visible = true
+        left.ZIndex = 1
+        right.ZIndex = 1
+        mid.Position = UDim2.new(0, LW, 0, 0)
+        mid.Size = UDim2.new(1, -(LW + RW), 1, 0)
+        scrim.Visible = false
+        scrim.BackgroundTransparency = 1
+    end
+
+    if self._menuBtn then
+        self._menuBtn.Visible = compact
+    end
+    if self._quickBtn then
+        self._quickBtn.Visible = compact
+    end
+    if self._subtitlePill then
+        self._subtitlePill.Visible = not compact
+    end
+    for _, shade in ipairs(self._shades or {}) do
+        shade.Visible = compact
+    end
+    if self._grip then
+        self._grip.Visible = self._resizable and not compact
+    end
+    self:_refreshProfile()
+end
+
+-- "Auto" (default), "Compact" or "Desktop"
+function Window:SetLayout(mode)
+    mode = string.lower(tostring(mode or "auto"))
+    if mode == "compact" then
+        self._forceCompact = true
+    elseif mode == "desktop" then
+        self._forceCompact = false
+    else
+        self._forceCompact = nil
+    end
+    self:_layout(true)
 end
 
 ---------------------------------------------------------------- configs
@@ -2625,15 +2931,28 @@ function Window:CreateSettingsTab(opts)
             self:SetAccent(c)
         end,
     })
-    ui:Keybind({
-        Title = "Toggle UI key",
-        Default = self.ToggleKey,
-        ChangedCallback = function(k)
-            if k then
-                self.ToggleKey = k
-            end
+    ui:Dropdown({
+        Title = "Layout",
+        Desc = "Auto switches to the compact layout on small screens",
+        Values = { "Auto", "Compact", "Desktop" },
+        Default = self._forceCompact == nil and "Auto" or (self._forceCompact and "Compact" or "Desktop"),
+        CallOnCreate = false,
+        Callback = function(v)
+            self:SetLayout(v)
         end,
     })
+    -- no point in a toggle key on devices without a keyboard
+    if not MOBILE then
+        ui:Keybind({
+            Title = "Toggle UI key",
+            Default = self.ToggleKey,
+            ChangedCallback = function(k)
+                if k then
+                    self.ToggleKey = k
+                end
+            end,
+        })
+    end
     ui:Slider({
         Title = "Window transparency",
         Min = 0,
@@ -2647,6 +2966,7 @@ function Window:CreateSettingsTab(opts)
     })
     ui:Toggle({
         Title = "Show profile",
+        Desc = "Hidden automatically when the window is small",
         Default = true,
         CallOnCreate = false,
         Callback = function(v)
@@ -2844,16 +3164,17 @@ local function playLoader(opts, theme)
     })
     tween(dim, { BackgroundTransparency = 0.45 }, 0.3)
 
-    -- card
+    -- card (340 wide max, shrinks on narrow phone screens)
     local card = create(nil, "CanvasGroup", {
         AnchorPoint = Vector2.new(0.5, 0.5),
         Position = UDim2.fromScale(0.5, 0.5),
-        Size = UDim2.fromOffset(340, 140),
+        Size = UDim2.new(1, -24, 0, 140),
         BackgroundColor3 = theme.Topbar,
         BorderSizePixel = 0,
         GroupTransparency = 1,
         Parent = gui,
     })
+    sizeMax(card, 340, 140)
     corner(card, 8)
     local cardStroke = Instance.new("UIStroke")
     cardStroke.Color = theme.Outline
@@ -3055,8 +3376,17 @@ function SAR:CreateWindow(opts)
     self._floating = opts.FloatingButton ~= false
     self._onDestroy = opts.OnDestroy
 
+    -- responsive layout state
+    self._profileWanted = opts.ShowProfile ~= false
+    self._forceCompact = opts.Compact -- nil = automatic, true / false = forced
+    self._breakpoint = tonumber(opts.CompactBreakpoint) or 680
+    self._resizable = opts.Resizable ~= false
+    self._autoSize = opts.Size == nil
+    self._drawer = nil
+
     local LW = opts.LeftWidth or 168
     local RW = opts.RightWidth or 168
+    self._LW, self._RW = LW, RW
 
     local guiName = "SAR_UI"
     removeOld(guiName)
@@ -3074,38 +3404,50 @@ function SAR:CreateWindow(opts)
     mountGui(gui)
     self.Gui = gui
 
-    local size = opts.Size
-    if not size then
-        local cam = workspace.CurrentCamera
-        local vs = cam and cam.ViewportSize or Vector2.new(1280, 720)
-        size = UDim2.fromOffset(math.min(860, vs.X - 24), math.min(540, vs.Y - 24))
-    end
+    local size = opts.Size or defaultWindowSize(viewportSize(gui))
 
-    -- Accent-responsive ambient shadow. Multiple translucent layers soften the edge
-    -- without external image assets; theme/accent changes recolor every layer.
+    -- Layered soft shadow. Stacked translucent rounded rectangles fade out away from the
+    -- window (no image assets needed): a few faint accent layers for a colored halo at the
+    -- back, then a stack of black layers for depth. Offset downwards so it looks lifted.
+    -- Theme / accent changes recolor the accent layers.
     self._shadowFrames = {}
-    local shadowSpecs = {
-        { Expand = 42, OffsetY = 12, Transparency = 0.955, Radius = 14 },
-        { Expand = 26, OffsetY = 9, Transparency = 0.93, Radius = 11 },
-        { Expand = 12, OffsetY = 5, Transparency = 0.90, Radius = 8 },
-    }
-    for _, spec in ipairs(shadowSpecs) do
-        local shadow = create(self, "Frame", {
-            Name = "AccentShadow",
+    local function addShadow(spec, accentLayer)
+        local props = {
+            Name = accentLayer and "AccentGlow" or "Shadow",
             AnchorPoint = Vector2.new(0.5, 0.5),
             Position = UDim2.fromScale(0.5, 0.5),
             Size = UDim2.new(size.X.Scale, size.X.Offset + spec.Expand, size.Y.Scale, size.Y.Offset + spec.Expand),
             BackgroundTransparency = 1,
             BorderSizePixel = 0,
             Parent = gui,
-        }, { BackgroundColor3 = "Accent" })
-        corner(shadow, spec.Radius)
+        }
+        local shadow
+        if accentLayer then
+            shadow = create(self, "Frame", props, { BackgroundColor3 = "Accent" })
+        else
+            props.BackgroundColor3 = Color3.new(0, 0, 0)
+            shadow = create(self, "Frame", props)
+        end
+        corner(shadow, 6 + math.floor(spec.Expand / 2))
         table.insert(self._shadowFrames, {
             Frame = shadow,
             Expand = spec.Expand,
             OffsetY = spec.OffsetY,
             Transparency = spec.Transparency,
         })
+    end
+
+    for i = 1, 3 do
+        addShadow({ Expand = 14 + i * 26, OffsetY = 2, Transparency = 0.972 }, true)
+    end
+    local DARK_LAYERS = 12
+    for i = 1, DARK_LAYERS do
+        local t = i / DARK_LAYERS
+        addShadow({
+            Expand = 8 + math.floor(t * 84),
+            OffsetY = 3 + math.floor(t * 9),
+            Transparency = 0.965,
+        }, false)
     end
 
     local main = create(self, "CanvasGroup", {
@@ -3221,6 +3563,7 @@ function SAR:CreateWindow(opts)
             AutomaticSize = Enum.AutomaticSize.X,
             Parent = pill,
         }, "SubText")
+        self._subtitlePill = pill
     end
 
     local rightGroup = create(self, "Frame", {
@@ -3234,53 +3577,72 @@ function SAR:CreateWindow(opts)
     list(rightGroup, 4, Enum.FillDirection.Horizontal, nil, Enum.VerticalAlignment.Center)
     pad(rightGroup, 0, 0, 10, 0)
 
-    -- minimize / close buttons are drawn from bars, no glyphs
-    local function topButton(kind, order, hoverKey)
+    -- top bar buttons are drawn from bars, no glyphs
+    -- min / close live on the right, menu (tabs) + quick (right rail) only show in the compact layout
+    local btnSize = sz(28, 34)
+    local function topButton(kind, order, hoverKey, parent)
         local b = create(self, "TextButton", {
             Text = "",
             AutoButtonColor = false,
-            Size = UDim2.fromOffset(28, 28),
+            Size = UDim2.fromOffset(btnSize, btnSize),
             BackgroundTransparency = 1,
             BorderSizePixel = 0,
             LayoutOrder = order,
-            Parent = rightGroup,
+            Parent = parent,
         }, { BackgroundColor3 = hoverKey })
         corner(b, 4)
+        local c = btnSize / 2
         local bars = {}
         if kind == "min" then
-            table.insert(bars, bar(self, b, 10, 2, 14, 14, 0, "SubText"))
+            table.insert(bars, bar(self, b, 10, 2, c, c, 0, "SubText"))
+        elseif kind == "menu" then
+            for _, dy in ipairs({ -5, 0, 5 }) do
+                table.insert(bars, bar(self, b, 12, 2, c, c + dy, 0, "SubText"))
+            end
+        elseif kind == "quick" then
+            for _, d in ipairs({ { -4, -4 }, { 4, -4 }, { -4, 4 }, { 4, 4 } }) do
+                table.insert(bars, bar(self, b, 6, 6, c + d[1], c + d[2], 0, "SubText"))
+            end
         else
-            table.insert(bars, bar(self, b, 12, 2, 14, 14, 45, "SubText"))
-            table.insert(bars, bar(self, b, 12, 2, 14, 14, -45, "SubText"))
+            table.insert(bars, bar(self, b, 12, 2, c, c, 45, "SubText"))
+            table.insert(bars, bar(self, b, 12, 2, c, c, -45, "SubText"))
         end
-        b.MouseEnter:Connect(function()
-            tween(b, { BackgroundTransparency = 0 }, 0.1)
-            if hoverKey == "Danger" then
-                for _, f in ipairs(bars) do
-                    tween(f, { BackgroundColor3 = Color3.new(1, 1, 1) }, 0.1)
+        if not MOBILE then
+            b.MouseEnter:Connect(function()
+                tween(b, { BackgroundTransparency = 0 }, 0.1)
+                if hoverKey == "Danger" then
+                    for _, f in ipairs(bars) do
+                        tween(f, { BackgroundColor3 = Color3.new(1, 1, 1) }, 0.1)
+                    end
                 end
-            end
-        end)
-        b.MouseLeave:Connect(function()
-            tween(b, { BackgroundTransparency = 1 }, 0.1)
-            for _, f in ipairs(bars) do
-                tween(f, { BackgroundColor3 = self.Theme.SubText }, 0.1)
-            end
-        end)
+            end)
+            b.MouseLeave:Connect(function()
+                tween(b, { BackgroundTransparency = 1 }, 0.1)
+                for _, f in ipairs(bars) do
+                    tween(f, { BackgroundColor3 = self.Theme.SubText }, 0.1)
+                end
+            end)
+        end
         return b
     end
-    local minBtn = topButton("min", 1, "Element")
-    local closeBtn = topButton("close", 2, "Danger")
+    local menuBtn = topButton("menu", 0, "Element", leftGroup)
+    local quickBtn = topButton("quick", 0, "Element", rightGroup)
+    local minBtn = topButton("min", 1, "Element", rightGroup)
+    local closeBtn = topButton("close", 2, "Danger", rightGroup)
+    menuBtn.Visible = false
+    quickBtn.Visible = false
+    self._menuBtn = menuBtn
+    self._quickBtn = quickBtn
 
     -- drag by the top bar. the window glides to the cursor instead of snapping
     -- keeps at least 100px of the window on screen and the top bar reachable
     local function clampOnScreen(pos)
         local vs = gui.AbsoluteSize
-        local sz = main.AbsoluteSize
+        local sz2 = main.AbsoluteSize
         local cx = pos.X.Scale * vs.X + pos.X.Offset
         local cy = pos.Y.Scale * vs.Y + pos.Y.Offset
-        cx = math.clamp(cx, 100 - sz.X / 2, vs.X - 100 + sz.X / 2)
-        cy = math.clamp(cy, sz.Y / 2, vs.Y - 44 + sz.Y / 2)
+        cx = math.clamp(cx, 100 - sz2.X / 2, vs.X - 100 + sz2.X / 2)
+        cy = math.clamp(cy, sz2.Y / 2, vs.Y - 44 + sz2.Y / 2)
         return UDim2.new(pos.X.Scale, cx - pos.X.Scale * vs.X, pos.Y.Scale, cy - pos.Y.Scale * vs.Y)
     end
 
@@ -3351,7 +3713,7 @@ function SAR:CreateWindow(opts)
         if isLeft then
             local field = create(self, "Frame", {
                 Name = "Search",
-                Size = UDim2.new(1, -16, 0, 28),
+                Size = UDim2.new(1, -16, 0, sz(28, 34)),
                 Position = UDim2.fromOffset(8, 10),
                 BorderSizePixel = 0,
                 Parent = rail,
@@ -3434,12 +3796,40 @@ function SAR:CreateWindow(opts)
             }, "SubText")
         end
 
+        -- soft edge shadow next to the rail, only visible while it's a drawer (compact layout)
+        local shade = create(self, "Frame", {
+            Name = "DrawerShade",
+            BackgroundColor3 = Color3.new(0, 0, 0),
+            BorderSizePixel = 0,
+            Size = UDim2.new(0, 16, 1, 0),
+            Visible = false,
+            ZIndex = 2,
+            Parent = rail,
+        })
+        local shadeGrad = Instance.new("UIGradient")
+        shadeGrad.Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0.55),
+            NumberSequenceKeypoint.new(1, 1),
+        })
+        if isLeft then
+            shade.Position = UDim2.new(1, 0, 0, 0)
+        else
+            shade.AnchorPoint = Vector2.new(1, 0)
+            shade.Position = UDim2.new(0, 0, 0, 0)
+            shadeGrad.Rotation = 180
+        end
+        shadeGrad.Parent = shade
+        self._shades = self._shades or {}
+        table.insert(self._shades, shade)
+
         return rail, scroll
     end
 
     local leftRail, leftScroll = buildRail("Left", LW, opts.LeftTitle or "Tabs")
     local rightRail, rightScroll = buildRail("Right", RW, opts.RightTitle or "Quick")
     self._leftScroll = leftScroll
+    self._leftRail = leftRail
+    self._rightRail = rightRail
     self.Left = newContainer(self, leftScroll, Container)
     self.Right = newContainer(self, rightScroll, Container)
 
@@ -3453,6 +3843,25 @@ function SAR:CreateWindow(opts)
         Parent = body,
     }, { BackgroundColor3 = "Panel" })
     table.insert(self._fadeFrames, mid)
+    self._mid = mid
+
+    -- dark layer behind the drawers, tap it to close them (compact layout)
+    local scrim = create(self, "TextButton", {
+        Name = "Scrim",
+        Text = "",
+        AutoButtonColor = false,
+        Size = UDim2.fromScale(1, 1),
+        BackgroundColor3 = Color3.new(0, 0, 0),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        Visible = false,
+        ZIndex = 5,
+        Parent = body,
+    })
+    scrim.MouseButton1Click:Connect(function()
+        self:_closeDrawers()
+    end)
+    self._scrim = scrim
 
     local chBar = create(self, "Frame", {
         Name = "ChannelBar",
@@ -3597,11 +4006,8 @@ function SAR:CreateWindow(opts)
         end
     end)
 
-    if opts.ShowProfile == false then
-        self:SetProfileVisible(false)
-    end
-
-    -- resize grip, two little diagonal lines
+    -- resize grip, two little diagonal lines (bigger hit area on touch devices)
+    local gripSize = sz(16, 26)
     local grip = create(self, "TextButton", {
         Text = "",
         AutoButtonColor = false,
@@ -3609,13 +4015,23 @@ function SAR:CreateWindow(opts)
         BorderSizePixel = 0,
         AnchorPoint = Vector2.new(1, 1),
         Position = UDim2.new(1, -2, 1, -2),
-        Size = UDim2.fromOffset(16, 16),
+        Size = UDim2.fromOffset(gripSize, gripSize),
         ZIndex = 5,
         Parent = main,
     })
-    bar(self, grip, 5, 1, 11.5, 11.5, -45, "SubText").ZIndex = 5
-    bar(self, grip, 10, 1, 8.5, 8.5, -45, "SubText").ZIndex = 5
-    if opts.Resizable ~= false then
+    local gripIcon = create(self, "Frame", {
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        AnchorPoint = Vector2.new(1, 1),
+        Position = UDim2.new(1, 0, 1, 0),
+        Size = UDim2.fromOffset(16, 16),
+        ZIndex = 5,
+        Parent = grip,
+    })
+    bar(self, gripIcon, 5, 1, 11.5, 11.5, -45, "SubText").ZIndex = 5
+    bar(self, gripIcon, 10, 1, 8.5, 8.5, -45, "SubText").ZIndex = 5
+    self._grip = grip
+    if self._resizable then
         local startMouse, startSize, startPos
         bindDrag(self, grip, function(pos)
             local d = pos - startMouse
@@ -3626,8 +4042,10 @@ function SAR:CreateWindow(opts)
                 startPos.X.Scale, startPos.X.Offset + (w - startSize.X) / 2,
                 startPos.Y.Scale, startPos.Y.Offset + (h - startSize.Y) / 2
             )
+            self:_layout()
         end, function(pos)
             dragTarget = nil
+            self._autoSize = false
             startMouse = pos
             startSize = main.AbsoluteSize
             startPos = main.Position
@@ -3636,25 +4054,27 @@ function SAR:CreateWindow(opts)
         grip.Visible = false
     end
 
-    -- notifications
+    -- notifications (300 wide max, shrinks on narrow screens)
     local notif = create(self, "Frame", {
         Name = "Notifications",
         BackgroundTransparency = 1,
         AnchorPoint = Vector2.new(1, 1),
         Position = UDim2.new(1, -16, 1, -16),
-        Size = UDim2.new(0, 300, 1, -32),
+        Size = UDim2.new(1, -32, 1, -32),
         Parent = gui,
     })
+    sizeMax(notif, 300, math.huge)
     list(notif, 8, Enum.FillDirection.Vertical, Enum.HorizontalAlignment.Right, Enum.VerticalAlignment.Bottom)
     self._notifHolder = notif
 
     -- floating open button (shows when the window is hidden)
+    local obs = sz(42, 50)
     local openBtn = create(self, "TextButton", {
         Name = "OpenButton",
         Text = "",
         AutoButtonColor = false,
-        Size = UDim2.fromOffset(42, 42),
-        Position = UDim2.new(0, 20, 0.5, -21),
+        Size = UDim2.fromOffset(obs, obs),
+        Position = UDim2.new(0, 20, 0.5, -obs / 2),
         BorderSizePixel = 0,
         Visible = false,
         Parent = gui,
@@ -3671,8 +4091,8 @@ function SAR:CreateWindow(opts)
             moved = true
         end
         local vs = gui.AbsoluteSize
-        local px = math.clamp(btnStartPos.X.Scale * vs.X + btnStartPos.X.Offset + d.X, 0, vs.X - 42)
-        local py = math.clamp(btnStartPos.Y.Scale * vs.Y + btnStartPos.Y.Offset + d.Y, 0, vs.Y - 42)
+        local px = math.clamp(btnStartPos.X.Scale * vs.X + btnStartPos.X.Offset + d.X, 0, vs.X - obs)
+        local py = math.clamp(btnStartPos.Y.Scale * vs.Y + btnStartPos.Y.Offset + d.Y, 0, vs.Y - obs)
         openBtn.Position = UDim2.fromOffset(px, py)
     end, function(pos)
         btnStartMouse = pos
@@ -3712,6 +4132,14 @@ function SAR:CreateWindow(opts)
         })
     end)
 
+    -- compact layout buttons: tabs drawer (left) and quick buttons drawer (right)
+    menuBtn.MouseButton1Click:Connect(function()
+        self:_toggleDrawer("Left")
+    end)
+    quickBtn.MouseButton1Click:Connect(function()
+        self:_toggleDrawer("Right")
+    end)
+
     self:_connect(UserInputService.InputBegan, function(input, processed)
         if processed then
             return
@@ -3720,6 +4148,24 @@ function SAR:CreateWindow(opts)
             self:Toggle()
         end
     end)
+
+    -- screen size changed (rotation, window resize): refit the window and re-pick the layout
+    self:_connect(gui:GetPropertyChangedSignal("AbsoluteSize"), function()
+        if self._destroyed then
+            return
+        end
+        if self._autoSize then
+            dragTarget = nil
+            main.Size = defaultWindowSize(viewportSize(gui))
+            main.Position = UDim2.fromScale(0.5, 0.5)
+        else
+            main.Position = clampOnScreen(main.Position)
+        end
+        self:_layout(true)
+    end)
+
+    -- pick desktop / compact layout for the starting size
+    self:_layout(true)
 
     table.insert(SAR.Windows, self)
 
