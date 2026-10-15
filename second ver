@@ -22,8 +22,8 @@
         is never hidden. when the window gets narrow the tab list just gets slimmer and the
         right rail (quick buttons) turns into a slide-in drawer, grid button in the top bar.
         short windows (phone in landscape) drop the rail titles to give the pages more height.
-        on small windows the profile card turns into a slim card in the bottom right corner
-        (avatar, name, username, fps / ping). Settings > "Show profile" still toggles it.
+        on small windows the profile card moves to the bottom of the right rail ("Quick") as a
+        compact card (avatar, name, username, fps / ping). Settings > "Show profile" toggles it.
         controls get bigger touch targets on touch devices, sliders / color pickers no
         longer fight with page scrolling, and key chips are hidden when there is no keyboard.
         Compact = true / false      force the compact layout on or off (default: automatic)
@@ -49,7 +49,7 @@
         DisplayName, Username, UserId, Game   (Game overrides the auto detected game name)
 ]]
 
-local SAR = { Version = "1.5.2", Windows = {} }
+local SAR = { Version = "1.5.3", Windows = {} }
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
@@ -2640,9 +2640,10 @@ function Window:_mainSize()
     return Vector2.new(s.X.Scale * vs.X + s.X.Offset, s.Y.Scale * vs.Y + s.Y.Offset)
 end
 
--- profile card: full card on big windows, slim card in the bottom right on small ones
-local SLIM_H = 36
-local SLIM_RESERVE = 44
+-- profile card: full card in the middle on big windows. on small windows it moves to the
+-- bottom of the right rail ("Quick") as a compact card, and the rail list stops above it
+local RAIL_PROFILE_H = 64
+local RAIL_RESERVE = 72
 
 function Window:_refreshProfile()
     local p = self._profile
@@ -2651,39 +2652,41 @@ function Window:_refreshProfile()
     end
     local parts = self._profileParts
     local wanted = self._profileWanted ~= false
-    local slim = self._compact or self._short
+    local inRail = self._compact or self._short
     p.Visible = wanted
 
-    local bottom
-    if not wanted then
-        bottom = self._short and 0 or FOOTER_H
-    elseif slim then
-        bottom = SLIM_RESERVE
-        local w = math.clamp((self._midW or 300) - 70, 140, 196)
-        p.AnchorPoint = Vector2.new(1, 1)
-        p.Position = UDim2.new(1, -8, 1, -4)
-        p.Size = UDim2.fromOffset(w, SLIM_H)
+    local target = inRail and self._rightRail or self._mid
+    if p.Parent ~= target then
+        p.Parent = target
+    end
 
-        parts.avatar.Size = UDim2.fromOffset(26, 26)
-        parts.avatar.Position = UDim2.new(0, 6, 0.5, 0)
-        parts.name.TextSize = 12
-        parts.name.Size = UDim2.new(1, -96, 0, 15)
-        parts.name.Position = UDim2.new(0, 38, 0, 4)
+    if inRail then
+        p.AnchorPoint = Vector2.new(0.5, 1)
+        p.Position = UDim2.new(0.5, 0, 1, -8)
+        p.Size = UDim2.new(1, -16, 0, RAIL_PROFILE_H)
+
+        parts.avatar.Size = UDim2.fromOffset(30, 30)
+        parts.avatar.AnchorPoint = Vector2.new(0, 0)
+        parts.avatar.Position = UDim2.new(0, 8, 0, 8)
+        parts.name.TextSize = 13
+        parts.name.Size = UDim2.new(1, -52, 0, 15)
+        parts.name.Position = UDim2.new(0, 44, 0, 8)
         parts.user.TextSize = 11
-        parts.user.Size = UDim2.new(1, -96, 0, 13)
-        parts.user.Position = UDim2.new(0, 38, 0, 19)
+        parts.user.Size = UDim2.new(1, -52, 0, 13)
+        parts.user.Position = UDim2.new(0, 44, 0, 24)
         parts.game.Visible = false
+        parts.stats.AnchorPoint = Vector2.new(0, 0)
+        parts.stats.TextXAlignment = Enum.TextXAlignment.Left
         parts.stats.TextSize = 11
-        parts.stats.Size = UDim2.fromOffset(52, 28)
-        parts.stats.Position = UDim2.new(1, -6, 0.5, 0)
-        parts.stats.Visible = self._showStats
+        parts.stats.Size = UDim2.new(1, -16, 0, 14)
+        parts.stats.Position = UDim2.new(0, 8, 0, 43)
     else
-        bottom = PROFILE_H
         p.AnchorPoint = Vector2.new(0.5, 1)
         p.Position = UDim2.new(0.5, 0, 1, -(FOOTER_H + 2))
         p.Size = UDim2.new(1, -28, 0, 68)
 
         parts.avatar.Size = UDim2.fromOffset(38, 38)
+        parts.avatar.AnchorPoint = Vector2.new(0, 0.5)
         parts.avatar.Position = UDim2.new(0, 8, 0.5, 0)
         parts.name.TextSize = 15
         parts.name.Size = UDim2.new(1, -140, 0, 18)
@@ -2692,28 +2695,30 @@ function Window:_refreshProfile()
         parts.user.Size = UDim2.new(1, -140, 0, 14)
         parts.user.Position = UDim2.new(0, 56, 0, 27)
         parts.game.Visible = true
+        parts.stats.AnchorPoint = Vector2.new(1, 0.5)
+        parts.stats.TextXAlignment = Enum.TextXAlignment.Right
         parts.stats.TextSize = 12
         parts.stats.Size = UDim2.fromOffset(66, 34)
         parts.stats.Position = UDim2.new(1, -12, 0.5, 0)
-        parts.stats.Visible = self._showStats
     end
+    parts.stats.Visible = self._showStats
+    self._statsInline = inRail -- one line ("60 fps | 45 ms") in the narrow rail card
+
+    -- middle pages only reserve room for the card when it's the big one in the middle
+    local bottom = (wanted and not inRail) and PROFILE_H or (self._short and 0 or FOOTER_H)
     self._pages.Size = UDim2.new(1, 0, 1, -(41 + bottom))
 
-    -- "SAR UI" footer: centered at the bottom normally, left of the slim card when it's shown
+    -- right rail list stops above the card
+    local r = self._railUI and self._railUI.Right
+    if r then
+        local y = r.scroll.Position.Y.Offset
+        r.scroll.Size = UDim2.new(1, 0, 1, -(y + ((wanted and inRail) and RAIL_RESERVE or 0)))
+    end
+
+    -- "SAR UI" footer, centered under the pages
     local f = self._footer
     if f then
         f.Visible = not self._short
-        if wanted and slim then
-            f.AnchorPoint = Vector2.new(0, 1)
-            f.Position = UDim2.new(0, 12, 1, -((SLIM_RESERVE - 16) / 2))
-            f.Size = UDim2.new(0, 60, 0, 16)
-            f.TextXAlignment = Enum.TextXAlignment.Left
-        else
-            f.AnchorPoint = Vector2.new(0.5, 1)
-            f.Position = UDim2.new(0.5, 0, 1, -5)
-            f.Size = UDim2.new(1, 0, 0, 16)
-            f.TextXAlignment = Enum.TextXAlignment.Center
-        end
     end
 end
 
@@ -3055,7 +3060,7 @@ function Window:CreateSettingsTab(opts)
     })
     ui:Toggle({
         Title = "Show profile",
-        Desc = "Slim card in the bottom right when the window is small",
+        Desc = "Moves to the bottom of the Quick rail when the window is small",
         Default = true,
         CallOnCreate = false,
         Callback = function(v)
@@ -4094,7 +4099,7 @@ function SAR:CreateWindow(opts)
             pcall(function()
                 ping = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue() + 0.5)
             end)
-            statsLabel.Text = fps .. " fps\n" .. ping .. " ms"
+            statsLabel.Text = fps .. " fps" .. (self._statsInline and "  |  " or "\n") .. ping .. " ms"
         end
     end)
 
