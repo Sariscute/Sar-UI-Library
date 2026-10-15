@@ -1,7 +1,7 @@
 --[[
     SAR UI - custom Roblox Luau UI library
 
-    left rail = tabs, middle = channels + pages + profile, right rail = quick buttons
+    left rail = search + tabs, middle = channels + pages + profile, right rail = quick buttons
 
     local SAR = loadstring(readfile("SAR_UI.lua"))()
     local Window = SAR:CreateWindow({ Title = "SAR UI" })
@@ -21,14 +21,22 @@
         Label, Paragraph, Button, Toggle, Slider, Dropdown, Input,
         Keybind, ColorPicker, Divider, Section
 
+    Button/Toggle key chips:
+        Keybind = Enum.KeyCode.F or "F" or true (true starts unbound)
+        KeybindMode = "Toggle" or "Hold" (Toggle only)
+        KeybindChanged = function(key) end
+
     window:
-        Tab, SelectTab, Notify, Dialog, Toggle, SetTheme, SetAccent,
+        Tab, SelectTab, Search, Notify, Dialog, Toggle, SetTheme, SetAccent,
         SetTransparency, SetTitle, SetProfile, SetProfileVisible,
         SaveConfig, LoadConfig, DeleteConfig, ListConfigs,
         CreateSettingsTab, Destroy
+
+    SetProfile fields:
+        DisplayName, Username, UserId, Game   (Game overrides the auto detected game name)
 ]]
 
-local SAR = { Version = "1.2.0", Windows = {} }
+local SAR = { Version = "1.4.0", Windows = {} }
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
@@ -37,6 +45,7 @@ local RunService = game:GetService("RunService")
 local HttpService = game:GetService("HttpService")
 local CoreGui = game:GetService("CoreGui")
 local Stats = game:GetService("Stats")
+local MarketplaceService = game:GetService("MarketplaceService")
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -44,9 +53,9 @@ local FONT_REG = Enum.Font.Ubuntu
 local FONT_MED = Enum.Font.Ubuntu
 local FONT_BOLD = Enum.Font.Ubuntu
 
--- bottom of the middle column: profile card (54) + gaps + the SAR UI footer
+-- bottom of the middle column: profile card (68) + gaps + the SAR UI footer
 local FOOTER_H = 24
-local PROFILE_H = 90
+local PROFILE_H = 104
 
 ---------------------------------------------------------------- themes
 
@@ -423,6 +432,227 @@ local function hoverEffect(win, button, base, over)
     end)
 end
 
+local KEY_SHORT = {
+    LeftShift = "LShift", RightShift = "RShift",
+    LeftControl = "LCtrl", RightControl = "RCtrl",
+    LeftAlt = "LAlt", RightAlt = "RAlt",
+    Backspace = "Bksp", Return = "Enter", Escape = "Esc", Backquote = "`",
+    One = "1", Two = "2", Three = "3", Four = "4", Five = "5",
+    Six = "6", Seven = "7", Eight = "8", Nine = "9", Zero = "0",
+}
+
+local KEY_CHIP_W = 96 -- header space reserved for the chip
+
+local function keyName(key)
+    if not key then
+        return "none"
+    end
+    return KEY_SHORT[key.Name] or key.Name
+end
+
+local function toKeyCode(k)
+    if typeof(k) == "EnumItem" then
+        return k
+    end
+    if type(k) == "string" then
+        local ok, v = pcall(function()
+            return Enum.KeyCode[k]
+        end)
+        if ok then
+            return v
+        end
+    end
+    return nil
+end
+
+-- adds the key chip to a card header and wires the key press.
+-- offset   : pixels from the right edge of the header where the chip sits
+-- handlers : { Modes = bool, Press = fn(mode), Release = fn() }
+local function attachKeybind(win, el, opts, offset, handlers)
+    local key = toKeyCode(opts.Keybind)
+    local mode = (handlers.Modes and opts.KeybindMode == "Hold") and "Hold" or "Toggle"
+    local listening = false
+    local held = false
+    local keyFlag = opts.Flag and (opts.Flag .. "_key") or nil
+    local modeFlag = opts.Flag and (opts.Flag .. "_mode") or nil
+
+    local chip = create(win, "TextButton", {
+        Text = "",
+        Font = FONT_MED,
+        TextSize = 12,
+        AutoButtonColor = false,
+        AutomaticSize = Enum.AutomaticSize.X,
+        Size = UDim2.fromOffset(0, 20),
+        AnchorPoint = Vector2.new(1, 0.5),
+        Position = UDim2.new(1, -offset, 0.5, 0),
+        BorderSizePixel = 0,
+        Parent = el.Header,
+    }, { BackgroundColor3 = "Field" })
+    corner(chip, 4)
+    stroke(win, chip, "Outline")
+    pad(chip, 8, 0, 8, 0)
+    sizeMin(chip, 36, 20)
+
+    local function render()
+        local t = win.Theme
+        if listening then
+            chip.Text = "..."
+            chip.TextColor3 = t.Accent
+        else
+            local txt = keyName(key)
+            if key and mode == "Hold" then
+                txt = txt .. " (hold)"
+            end
+            chip.Text = txt
+            chip.TextColor3 = key and t.Text or t.SubText
+        end
+    end
+    render()
+    win:_hook(chip, render)
+
+    local function stopListening()
+        listening = false
+        render()
+        if win._bindingOwner == chip then
+            win._bindingOwner = nil
+            win._cancelBinding = nil
+            task.defer(function()
+                if win._bindingOwner == nil then
+                    win._binding = false
+                end
+            end)
+        end
+    end
+
+    local function releaseIfHeld()
+        if held then
+            held = false
+            handlers.Release()
+        end
+    end
+
+    function el:SetKey(k, silent)
+        releaseIfHeld()
+        key = toKeyCode(k)
+        stopListening()
+        win:_setFlag(keyFlag, key)
+        if not silent then
+            fire(opts.KeybindChanged, key)
+        end
+    end
+    function el:GetKey()
+        return key
+    end
+    function el:SetKeybindMode(m, silent)
+        if not handlers.Modes then
+            return
+        end
+        releaseIfHeld()
+        mode = (m == "Hold") and "Hold" or "Toggle"
+        render()
+        win:_setFlag(modeFlag, mode)
+    end
+    function el:GetKeybindMode()
+        return mode
+    end
+
+    -- left click = listen, right click = switch mode
+    chip.MouseButton1Click:Connect(function()
+        if el.Locked then
+            return
+        end
+        if listening and win._bindingOwner == chip then
+            stopListening()
+            return
+        end
+        if type(win._cancelBinding) == "function" then
+            win._cancelBinding()
+        end
+        listening = true
+        win._bindingOwner = chip
+        win._binding = true
+        win._cancelBinding = stopListening
+        render()
+    end)
+    if handlers.Modes then
+        chip.MouseButton2Click:Connect(function()
+            if el.Locked then
+                return
+            end
+            el:SetKeybindMode(mode == "Toggle" and "Hold" or "Toggle")
+        end)
+    end
+
+    win:_connect(UserInputService.InputBegan, function(input, processed)
+        if listening then
+            if win._bindingOwner ~= chip then
+                stopListening()
+                return
+            end
+            -- Non-keyboard input must not end an active key capture.
+            if input.UserInputType ~= Enum.UserInputType.Keyboard then
+                return
+            end
+            local kc = input.KeyCode
+            if kc == Enum.KeyCode.Escape then
+                stopListening()
+            elseif kc == Enum.KeyCode.Backspace or kc == Enum.KeyCode.Delete then
+                el:SetKey(nil)
+            elseif kc == win.ToggleKey then
+                stopListening()
+                win:Notify({
+                    Title = "Key already in use",
+                    Content = kc.Name .. " toggles the window.",
+                    Type = "Warning",
+                    Duration = 3,
+                })
+            else
+                el:SetKey(kc)
+            end
+            return
+        end
+
+        if processed or win._binding or el.Locked or not key or input.KeyCode ~= key then
+            return
+        end
+        if handlers.Modes and mode == "Hold" then
+            held = true
+        end
+        handlers.Press(mode)
+    end)
+
+    win:_connect(UserInputService.InputEnded, function(input)
+        if held and input.KeyCode == key then
+            held = false
+            handlers.Release()
+        end
+    end)
+
+    -- save key + mode in configs
+    if keyFlag then
+        win:_registerFlag(keyFlag, {
+            Get = function()
+                return key
+            end,
+            Set = function(_, v)
+                el:SetKey(v, true)
+            end,
+        }, "Keybind")
+        win:_setFlag(keyFlag, key)
+    end
+    if modeFlag and handlers.Modes then
+        win:_registerFlag(modeFlag, {
+            Get = function()
+                return mode
+            end,
+            Set = function(_, v)
+                el:SetKeybindMode(v, true)
+            end,
+        }, "Mode")
+        win:_setFlag(modeFlag, mode)
+    end
+end
+
 ---------------------------------------------------------------- element base
 
 function Element:SetTitle(text)
@@ -608,7 +838,14 @@ end
 function Container:Button(opts)
     opts = norm(opts)
     local win = self.Window
-    local el = newCard(self, { Title = opts.Title, Desc = opts.Desc, Clickable = true, RightWidth = 24, Locked = opts.Locked })
+    local hasKey = opts.Keybind ~= nil and opts.Keybind ~= false
+    local el = newCard(self, {
+        Title = opts.Title,
+        Desc = opts.Desc,
+        Clickable = true,
+        RightWidth = 24 + (hasKey and KEY_CHIP_W or 0),
+        Locked = opts.Locked,
+    })
     local card = el.Frame
 
     local arrow = chevron(win, {
@@ -618,8 +855,7 @@ function Container:Button(opts)
         Parent = el.Header,
     }, "Accent")
 
-    hoverEffect(win, card)
-    card.MouseButton1Click:Connect(function()
+    local function press()
         if el.Locked then
             return
         end
@@ -627,7 +863,17 @@ function Container:Button(opts)
         card.BackgroundColor3 = t.Element:Lerp(t.Accent, 0.3)
         tween(card, { BackgroundColor3 = t.ElementHover }, 0.25)
         fire(opts.Callback)
-    end)
+    end
+
+    hoverEffect(win, card)
+    card.MouseButton1Click:Connect(press)
+
+    if hasKey then
+        attachKeybind(win, el, opts, 28, {
+            Press = press,
+            Release = function() end,
+        })
+    end
 
     function el:SetCallback(fn)
         opts.Callback = fn
@@ -639,7 +885,14 @@ end
 function Container:Toggle(opts)
     opts = norm(opts)
     local win = self.Window
-    local el = newCard(self, { Title = opts.Title, Desc = opts.Desc, Clickable = true, RightWidth = 50, Locked = opts.Locked })
+    local hasKey = opts.Keybind ~= nil and opts.Keybind ~= false
+    local el = newCard(self, {
+        Title = opts.Title,
+        Desc = opts.Desc,
+        Clickable = true,
+        RightWidth = 50 + (hasKey and KEY_CHIP_W or 0),
+        Locked = opts.Locked,
+    })
 
     local track = create(win, "Frame", {
         Size = UDim2.fromOffset(36, 18),
@@ -696,6 +949,22 @@ function Container:Toggle(opts)
         end
         el:Set(not el.Value)
     end)
+
+    if hasKey then
+        attachKeybind(win, el, opts, 44, {
+            Modes = true,
+            Press = function(mode)
+                if mode == "Hold" then
+                    el:Set(true)
+                else
+                    el:Set(not el.Value)
+                end
+            end,
+            Release = function()
+                el:Set(false)
+            end,
+        })
+    end
 
     finalize(win, el, opts, el.Value)
     return el
@@ -1191,13 +1460,26 @@ function Container:Keybind(opts)
     end
     render()
 
+    local function stopListening()
+        listening = false
+        render()
+        if win._bindingOwner == el then
+            win._bindingOwner = nil
+            win._cancelBinding = nil
+            task.defer(function()
+                if win._bindingOwner == nil then
+                    win._binding = false
+                end
+            end)
+        end
+    end
+
     function el:Set(key, silent)
         if type(key) == "string" then
             key = Enum.KeyCode[key]
         end
         self.Value = key
-        listening = false
-        render()
+        stopListening()
         win:_setFlag(opts.Flag, key)
         if not silent then
             fire(opts.ChangedCallback, key)
@@ -1212,25 +1494,40 @@ function Container:Keybind(opts)
         if el.Locked then
             return
         end
+        if listening and win._bindingOwner == el then
+            render()
+            return
+        end
+        if type(win._cancelBinding) == "function" then
+            win._cancelBinding()
+        end
         listening = true
+        win._bindingOwner = el
+        win._binding = true
+        win._cancelBinding = stopListening
         render()
     end)
 
     win:_connect(UserInputService.InputBegan, function(input, processed)
         if listening then
-            if input.UserInputType == Enum.UserInputType.Keyboard then
-                if input.KeyCode == Enum.KeyCode.Escape then
-                    listening = false
-                    render()
-                elseif input.KeyCode == Enum.KeyCode.Backspace or input.KeyCode == Enum.KeyCode.Delete then
-                    el:Set(nil)
-                else
-                    el:Set(input.KeyCode)
-                end
+            if win._bindingOwner ~= el then
+                stopListening()
+                return
+            end
+            -- Keep listening through mouse/touch input; only keyboard input binds a key.
+            if input.UserInputType ~= Enum.UserInputType.Keyboard then
+                return
+            end
+            if input.KeyCode == Enum.KeyCode.Escape then
+                stopListening()
+            elseif input.KeyCode == Enum.KeyCode.Backspace or input.KeyCode == Enum.KeyCode.Delete then
+                el:Set(nil)
+            else
+                el:Set(input.KeyCode)
             end
             return
         end
-        if processed or el.Locked then
+        if processed or win._binding or el.Locked then
             return
         end
         if el.Value and input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == el.Value then
@@ -1831,6 +2128,55 @@ function Window:SelectTab(tab)
     tab:_visual()
 end
 
+-- filters the tab list by tab name, channel name or any element text inside a tab.
+-- jumps to the first matching tab when the current one doesn't match,
+-- and shows "No results" when nothing matches. empty query restores everything.
+function Window:Search(query)
+    query = string.lower(query or "")
+    local first, currentMatches = nil, false
+
+    for _, tab in ipairs(self.Tabs) do
+        local show = query == ""
+        if not show then
+            if string.find(string.lower(tab.Title), query, 1, true) then
+                show = true
+            else
+                for _, ch in ipairs(tab.Channels) do
+                    if string.find(string.lower(ch.Title), query, 1, true) then
+                        show = true
+                        break
+                    end
+                    for _, d in ipairs(ch._page:GetDescendants()) do
+                        if d:IsA("TextLabel") and string.find(string.lower(d.Text), query, 1, true) then
+                            show = true
+                            break
+                        end
+                    end
+                    if show then
+                        break
+                    end
+                end
+            end
+        end
+        tab._button.Visible = show
+        if show then
+            first = first or tab
+            if tab == self.SelectedTab then
+                currentMatches = true
+            end
+        end
+    end
+
+    if self._noResults then
+        self._noResults.Visible = query ~= "" and first == nil
+    end
+
+    -- only jump if the tab you're on doesn't match, so the page doesn't flicker while typing
+    if query ~= "" and first and not currentMatches then
+        self:SelectTab(first)
+    end
+end
+
 ---------------------------------------------------------------- notify / dialog
 
 function Window:Notify(opts)
@@ -2045,6 +2391,13 @@ function Window:Toggle(state)
         self._openButton.Visible = (not state) and self._floating
     end
 
+    for _, shadowSpec in ipairs(self._shadowFrames or {}) do
+        tween(shadowSpec.Frame, {
+            BackgroundTransparency = state and shadowSpec.Transparency or 1,
+        }, state and 0.2 or 0.15, Enum.EasingStyle.Quad,
+            state and Enum.EasingDirection.Out or Enum.EasingDirection.In)
+    end
+
     if state then
         -- start from "hidden" values only if the window was fully hidden
         if not main.Visible then
@@ -2115,6 +2468,9 @@ function Window:SetProfile(info)
     end
     if info.Username then
         self._profileUser.Text = "@" .. info.Username
+    end
+    if info.Game then
+        self._profileGame.Text = "Playing: " .. tostring(info.Game)
     end
     if info.UserId then
         task.spawn(function()
@@ -2725,6 +3081,33 @@ function SAR:CreateWindow(opts)
         size = UDim2.fromOffset(math.min(860, vs.X - 24), math.min(540, vs.Y - 24))
     end
 
+    -- Accent-responsive ambient shadow. Multiple translucent layers soften the edge
+    -- without external image assets; theme/accent changes recolor every layer.
+    self._shadowFrames = {}
+    local shadowSpecs = {
+        { Expand = 42, OffsetY = 12, Transparency = 0.955, Radius = 14 },
+        { Expand = 26, OffsetY = 9, Transparency = 0.93, Radius = 11 },
+        { Expand = 12, OffsetY = 5, Transparency = 0.90, Radius = 8 },
+    }
+    for _, spec in ipairs(shadowSpecs) do
+        local shadow = create(self, "Frame", {
+            Name = "AccentShadow",
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            Position = UDim2.fromScale(0.5, 0.5),
+            Size = UDim2.new(size.X.Scale, size.X.Offset + spec.Expand, size.Y.Scale, size.Y.Offset + spec.Expand),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+            Parent = gui,
+        }, { BackgroundColor3 = "Accent" })
+        corner(shadow, spec.Radius)
+        table.insert(self._shadowFrames, {
+            Frame = shadow,
+            Expand = spec.Expand,
+            OffsetY = spec.OffsetY,
+            Transparency = spec.Transparency,
+        })
+    end
+
     local main = create(self, "CanvasGroup", {
         Name = "Main",
         AnchorPoint = Vector2.new(0.5, 0.5),
@@ -2738,6 +3121,27 @@ function SAR:CreateWindow(opts)
     stroke(self, main, "Outline")
     self.Main = main
     table.insert(self._fadeFrames, main)
+
+    self:_connect(RunService.RenderStepped, function()
+        if self._destroyed or not main.Parent or not gui.Parent then
+            return
+        end
+        local guiPosition = gui.AbsolutePosition
+        local mainPosition = main.AbsolutePosition
+        local mainSize = main.AbsoluteSize
+        local centerX = mainPosition.X - guiPosition.X + mainSize.X / 2
+        local centerY = mainPosition.Y - guiPosition.Y + mainSize.Y / 2
+        for _, spec in ipairs(self._shadowFrames) do
+            local shadow = spec.Frame
+            if shadow.Parent then
+                shadow.Position = UDim2.fromOffset(centerX, centerY + spec.OffsetY)
+                shadow.Size = UDim2.fromOffset(
+                    mainSize.X + spec.Expand,
+                    mainSize.Y + spec.Expand
+                )
+            end
+        end
+    end)
 
     local scale = Instance.new("UIScale")
     scale.Parent = main
@@ -2918,7 +3322,12 @@ function SAR:CreateWindow(opts)
         Parent = main,
     })
 
+    -- left rail gets a search box on top (pushes the title + tab list down)
     local function buildRail(side, width, titleText)
+        local isLeft = side == "Left"
+        local titleY = isLeft and 46 or 12
+        local scrollY = isLeft and 68 or 34
+
         local rail = create(self, "Frame", {
             Name = side .. "Rail",
             Size = UDim2.new(0, width, 1, 0),
@@ -2938,20 +3347,71 @@ function SAR:CreateWindow(opts)
             line.AnchorPoint = Vector2.new(1, 0)
             line.Position = UDim2.new(1, 0, 0, 0)
         end
+
+        if isLeft then
+            local field = create(self, "Frame", {
+                Name = "Search",
+                Size = UDim2.new(1, -16, 0, 28),
+                Position = UDim2.fromOffset(8, 10),
+                BorderSizePixel = 0,
+                Parent = rail,
+            }, { BackgroundColor3 = "Field" })
+            corner(field, 5)
+            stroke(self, field, "Outline")
+
+            -- magnifier drawn from a ring + a bar
+            local icon = create(self, "Frame", {
+                BackgroundTransparency = 1,
+                AnchorPoint = Vector2.new(0, 0.5),
+                Position = UDim2.new(0, 9, 0.5, 0),
+                Size = UDim2.fromOffset(14, 14),
+                Parent = field,
+            })
+            local ring = create(self, "Frame", {
+                BackgroundTransparency = 1,
+                Position = UDim2.fromOffset(0, 0),
+                Size = UDim2.fromOffset(9, 9),
+                BorderSizePixel = 0,
+                Parent = icon,
+            })
+            corner(ring, 5)
+            stroke(self, ring, "SubText", 1.5)
+            bar(self, icon, 5, 2, 11, 11, 45, "SubText")
+
+            local box = create(self, "TextBox", {
+                Text = "",
+                PlaceholderText = "Search...",
+                ClearTextOnFocus = false,
+                Font = FONT_REG,
+                TextSize = 13,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                BackgroundTransparency = 1,
+                BorderSizePixel = 0,
+                ClipsDescendants = true,
+                Size = UDim2.new(1, -36, 1, 0),
+                Position = UDim2.new(0, 28, 0, 0),
+                Parent = field,
+            }, { TextColor3 = "Text", PlaceholderColor3 = "SubText" })
+            box:GetPropertyChangedSignal("Text"):Connect(function()
+                self:Search(box.Text)
+            end)
+            self._searchBox = box
+        end
+
         textLabel(self, {
             Text = titleText,
             Font = FONT_BOLD,
             TextSize = 13,
             Size = UDim2.new(1, -28, 0, 16),
-            Position = UDim2.new(0, 14, 0, 12),
+            Position = UDim2.new(0, 14, 0, titleY),
             Parent = rail,
         }, "SubText")
         local scroll = create(self, "ScrollingFrame", {
             Name = "Scroll",
             BackgroundTransparency = 1,
             BorderSizePixel = 0,
-            Position = UDim2.new(0, 0, 0, 34),
-            Size = UDim2.new(1, 0, 1, -34),
+            Position = UDim2.new(0, 0, 0, scrollY),
+            Size = UDim2.new(1, 0, 1, -scrollY),
             ScrollBarThickness = 2,
             CanvasSize = UDim2.new(),
             AutomaticCanvasSize = Enum.AutomaticSize.Y,
@@ -2959,6 +3419,21 @@ function SAR:CreateWindow(opts)
         }, { ScrollBarImageColor3 = "Accent" })
         pad(scroll, 8, 4, 8, 24)
         list(scroll, 6)
+
+        if isLeft then
+            self._noResults = textLabel(self, {
+                Name = "NoResults",
+                Text = "No results",
+                Font = FONT_REG,
+                TextSize = 13,
+                TextXAlignment = Enum.TextXAlignment.Center,
+                Size = UDim2.new(1, -16, 0, 20),
+                Position = UDim2.new(0, 8, 0, scrollY + 8),
+                Visible = false,
+                Parent = rail,
+            }, "SubText")
+        end
+
         return rail, scroll
     end
 
@@ -3005,17 +3480,17 @@ function SAR:CreateWindow(opts)
     })
     self._pages = pages
 
-    -- roblox profile card
+    -- roblox profile card (name, username, current game, fps/ping)
     local profile = create(self, "Frame", {
         Name = "Profile",
         AnchorPoint = Vector2.new(0.5, 1),
         Position = UDim2.new(0.5, 0, 1, -(FOOTER_H + 2)),
-        Size = UDim2.new(1, -28, 0, 54),
+        Size = UDim2.new(1, -28, 0, 68),
         BorderSizePixel = 0,
         Parent = mid,
     }, { BackgroundColor3 = "Element" })
     local pc = Instance.new("UISizeConstraint")
-    pc.MaxSize = Vector2.new(380, 54)
+    pc.MaxSize = Vector2.new(380, 68)
     pc.Parent = profile
     corner(profile, 6)
     stroke(self, profile, "Outline")
@@ -3046,9 +3521,18 @@ function SAR:CreateWindow(opts)
         TextSize = 13,
         TextTruncate = Enum.TextTruncate.AtEnd,
         Size = UDim2.new(1, -140, 0, 14),
-        Position = UDim2.new(0, 56, 0, 28),
+        Position = UDim2.new(0, 56, 0, 27),
         Parent = profile,
     }, "SubText")
+    local gameLabel = textLabel(self, {
+        Text = "Playing: " .. game.Name,
+        Font = FONT_MED,
+        TextSize = 12,
+        TextTruncate = Enum.TextTruncate.AtEnd,
+        Size = UDim2.new(1, -140, 0, 14),
+        Position = UDim2.new(0, 56, 0, 44),
+        Parent = profile,
+    }, "Accent")
     local statsLabel = textLabel(self, {
         Text = "-- fps\n-- ms",
         Font = FONT_MED,
@@ -3065,6 +3549,17 @@ function SAR:CreateWindow(opts)
     self._profileAvatar = avatar
     self._profileName = nameLabel
     self._profileUser = userLabel
+    self._profileGame = gameLabel
+
+    -- real game name from the marketplace (falls back to game.Name above)
+    task.spawn(function()
+        local ok, info = pcall(function()
+            return MarketplaceService:GetProductInfo(game.PlaceId)
+        end)
+        if ok and info and info.Name and not self._destroyed then
+            gameLabel.Text = "Playing: " .. info.Name
+        end
+    end)
 
     -- fixed footer text under the profile. plain TextLabel, no API touches it
     textLabel(self, {
