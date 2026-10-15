@@ -18,10 +18,11 @@
         LoadingTime = 2.8       loading screen length in seconds
 
     mobile / small screens:
-        the window fits the screen automatically. when it gets narrow (or on a phone in
-        landscape) the side rails turn into slide-in drawers:
-            menu button (top left)  = tabs + search
-            grid button (top right) = quick buttons
+        the window fits the screen automatically (portrait and landscape). the tab list
+        is never hidden. when the window gets narrow the tab list just gets slimmer and the
+        right rail (quick buttons) turns into a slide-in drawer, grid button in the top bar.
+        short windows (phone in landscape) drop the rail titles, footer and profile card to
+        give the pages more height.
         controls get bigger touch targets on touch devices, sliders / color pickers no
         longer fight with page scrolling, and key chips are hidden when there is no keyboard.
         Compact = true / false      force the compact layout on or off (default: automatic)
@@ -47,7 +48,7 @@
         DisplayName, Username, UserId, Game   (Game overrides the auto detected game name)
 ]]
 
-local SAR = { Version = "1.5.0", Windows = {} }
+local SAR = { Version = "1.5.1", Windows = {} }
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
@@ -215,8 +216,15 @@ end
 
 -- window size when the script doesn't pass one: fills small screens, caps on big ones
 local function defaultWindowSize(vs)
+    -- narrow screen (phone in portrait): fill it
     if vs.X < 720 then
         return UDim2.fromOffset(math.max(vs.X - 16, 240), math.max(math.min(vs.Y - 16, 720), 240))
+    end
+    -- short screen (phone in landscape): use the full width and almost the full height,
+    -- with a wider side margin on touch devices so notches / rounded corners don't cut it
+    if vs.Y < 480 then
+        local side = sz(12, 28)
+        return UDim2.fromOffset(math.max(vs.X - side * 2, 240), math.max(vs.Y - 12, 240))
     end
     local margin = sz(24, 12)
     return UDim2.fromOffset(math.min(860, vs.X - margin), math.max(math.min(540, vs.Y - margin), 240))
@@ -2192,10 +2200,6 @@ function Window:Tab(opts)
     end
     btn.MouseButton1Click:Connect(function()
         self:SelectTab(tab)
-        -- in the compact layout the tab list is a drawer, close it after picking a tab
-        if self._compact then
-            self:_setDrawer("Left", false)
-        end
     end)
 
     self:_hook(tab, function()
@@ -2642,7 +2646,8 @@ function Window:_refreshProfile()
     end
     local show = self._profileWanted ~= false and not self._compact and not self._short
     self._profile.Visible = show
-    self._pages.Size = UDim2.new(1, 0, 1, -(41 + (show and PROFILE_H or FOOTER_H)))
+    local bottom = show and PROFILE_H or (self._short and 0 or FOOTER_H)
+    self._pages.Size = UDim2.new(1, 0, 1, -(41 + bottom))
 end
 
 -- slides the rails in / out (compact layout) and fades the scrim behind them
@@ -2681,7 +2686,6 @@ function Window:_placeDrawers(animate)
             rail.Visible = false
         end
     end
-    place(self._leftRail, "Left")
     place(self._rightRail, "Right")
 
     if self._drawer then
@@ -2729,7 +2733,9 @@ function Window:_closeDrawers()
     end
 end
 
--- picks between the desktop layout (3 columns) and the compact layout (rails become drawers)
+-- picks between the desktop layout (tabs + content + quick rail) and the compact layout
+-- (tabs stay visible but slimmer, the quick rail becomes a drawer). short windows (phone in
+-- landscape) also drop the rail titles + footer to save height
 function Window:_layout(force)
     if self._destroyed or not self._leftRail then
         return
@@ -2741,7 +2747,7 @@ function Window:_layout(force)
     if self._forceCompact ~= nil then
         compact = self._forceCompact
     else
-        compact = ms.X < self._breakpoint or (MOBILE and short)
+        compact = ms.X < self._breakpoint
     end
 
     local changed = compact ~= self._compact or short ~= self._short
@@ -2754,46 +2760,63 @@ function Window:_layout(force)
     local left, right, mid, scrim = self._leftRail, self._rightRail, self._mid, self._scrim
 
     if compact then
-        local function drawerW(w)
-            return math.clamp(ms.X - 64, math.min(120, w + 24), w + 24)
-        end
-        left.Size = UDim2.new(0, drawerW(LW), 1, 0)
-        right.Size = UDim2.new(0, drawerW(RW), 1, 0)
-        left.ZIndex = 10
+        -- tabs stay on screen, just slimmer; the quick rail slides over the content
+        local lw = math.clamp(math.floor(ms.X * 0.27), math.min(104, LW), LW)
+        local rw = math.clamp(ms.X - 64, math.min(120, RW + 24), RW + 24)
+        left.Size = UDim2.new(0, lw, 1, 0)
+        left.Position = UDim2.new(0, 0, 0, 0)
+        left.Visible = true
+        left.ZIndex = 1
+        right.Size = UDim2.new(0, rw, 1, 0)
         right.ZIndex = 10
-        mid.Position = UDim2.new(0, 0, 0, 0)
-        mid.Size = UDim2.fromScale(1, 1)
+        mid.Position = UDim2.new(0, lw, 0, 0)
+        mid.Size = UDim2.new(1, -lw, 1, 0)
         self:_placeDrawers(false)
     else
         self._drawer = nil
-        left.Size = UDim2.new(0, LW, 1, 0)
-        right.Size = UDim2.new(0, RW, 1, 0)
+        local lw, rw = LW, RW
+        if short then
+            lw, rw = math.min(LW, 148), math.min(RW, 148)
+        end
+        left.Size = UDim2.new(0, lw, 1, 0)
+        right.Size = UDim2.new(0, rw, 1, 0)
         left.Position = UDim2.new(0, 0, 0, 0)
         right.Position = UDim2.new(1, 0, 0, 0)
         left.Visible = true
         right.Visible = true
         left.ZIndex = 1
         right.ZIndex = 1
-        mid.Position = UDim2.new(0, LW, 0, 0)
-        mid.Size = UDim2.new(1, -(LW + RW), 1, 0)
+        mid.Position = UDim2.new(0, lw, 0, 0)
+        mid.Size = UDim2.new(1, -(lw + rw), 1, 0)
         scrim.Visible = false
         scrim.BackgroundTransparency = 1
     end
 
-    if self._menuBtn then
-        self._menuBtn.Visible = compact
-    end
     if self._quickBtn then
         self._quickBtn.Visible = compact
     end
     if self._subtitlePill then
         self._subtitlePill.Visible = not compact
     end
-    for _, shade in ipairs(self._shades or {}) do
-        shade.Visible = compact
+    if self._shades and self._shades[2] then
+        self._shades[2].Visible = compact
     end
     if self._grip then
         self._grip.Visible = self._resizable and not compact
+    end
+
+    -- short windows: hide the rail titles and the footer, pull the lists up
+    for side, r in pairs(self._railUI or {}) do
+        r.title.Visible = not short
+        local y = short and (side == "Left" and 46 or 8) or r.y
+        r.scroll.Position = UDim2.new(0, 0, 0, y)
+        r.scroll.Size = UDim2.new(1, 0, 1, -y)
+        if r.noResults then
+            r.noResults.Position = UDim2.new(0, 8, 0, y + 8)
+        end
+    end
+    if self._footer then
+        self._footer.Visible = not short
     end
     self:_refreshProfile()
 end
@@ -2933,7 +2956,7 @@ function Window:CreateSettingsTab(opts)
     })
     ui:Dropdown({
         Title = "Layout",
-        Desc = "Auto switches to the compact layout on small screens",
+        Desc = "Auto slims the tabs and tucks the quick rail away on small screens",
         Values = { "Auto", "Compact", "Desktop" },
         Default = self._forceCompact == nil and "Auto" or (self._forceCompact and "Compact" or "Desktop"),
         CallOnCreate = false,
@@ -3625,13 +3648,10 @@ function SAR:CreateWindow(opts)
         end
         return b
     end
-    local menuBtn = topButton("menu", 0, "Element", leftGroup)
     local quickBtn = topButton("quick", 0, "Element", rightGroup)
     local minBtn = topButton("min", 1, "Element", rightGroup)
     local closeBtn = topButton("close", 2, "Danger", rightGroup)
-    menuBtn.Visible = false
     quickBtn.Visible = false
-    self._menuBtn = menuBtn
     self._quickBtn = quickBtn
 
     -- drag by the top bar. the window glides to the cursor instead of snapping
@@ -3760,7 +3780,7 @@ function SAR:CreateWindow(opts)
             self._searchBox = box
         end
 
-        textLabel(self, {
+        local titleLabel = textLabel(self, {
             Text = titleText,
             Font = FONT_BOLD,
             TextSize = 13,
@@ -3781,6 +3801,9 @@ function SAR:CreateWindow(opts)
         }, { ScrollBarImageColor3 = "Accent" })
         pad(scroll, 8, 4, 8, 24)
         list(scroll, 6)
+        local railUI = { title = titleLabel, scroll = scroll, y = scrollY }
+        self._railUI = self._railUI or {}
+        self._railUI[side] = railUI
 
         if isLeft then
             self._noResults = textLabel(self, {
@@ -3794,6 +3817,7 @@ function SAR:CreateWindow(opts)
                 Visible = false,
                 Parent = rail,
             }, "SubText")
+            railUI.noResults = self._noResults
         end
 
         -- soft edge shadow next to the rail, only visible while it's a drawer (compact layout)
@@ -3971,7 +3995,7 @@ function SAR:CreateWindow(opts)
     end)
 
     -- fixed footer text under the profile. plain TextLabel, no API touches it
-    textLabel(self, {
+    self._footer = textLabel(self, {
         Name = "Footer",
         Text = "SAR UI",
         Font = FONT_BOLD,
@@ -4132,10 +4156,7 @@ function SAR:CreateWindow(opts)
         })
     end)
 
-    -- compact layout buttons: tabs drawer (left) and quick buttons drawer (right)
-    menuBtn.MouseButton1Click:Connect(function()
-        self:_toggleDrawer("Left")
-    end)
+    -- compact layout: grid button opens the quick buttons drawer (right rail)
     quickBtn.MouseButton1Click:Connect(function()
         self:_toggleDrawer("Right")
     end)
