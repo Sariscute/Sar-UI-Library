@@ -1,7 +1,9 @@
 --[[
     SAR UI - custom Roblox Luau UI library
 
-    left rail = search + tabs, middle = channels + pages + profile, right rail = quick buttons
+    left rail = search + tabs, middle = channels + pages, right rail = quick buttons
+    profile card (PC): sits outside the window, bottom middle, with a small gap under it. it
+    follows the window when you drag / resize / hide it. mobile + compact layout are unchanged.
 
     local SAR = loadstring(readfile("SAR_UI.lua"))()
     local Window = SAR:CreateWindow({ Title = "SAR UI" })
@@ -81,6 +83,11 @@ end
 -- bottom of the middle column: profile card (68) + gaps + the SAR UI footer
 local FOOTER_H = 24
 local PROFILE_H = 104
+
+-- PC: the profile card sits outside the window. its width / height and the gap under the window
+local PROFILE_W = 380
+local PROFILE_CARD_H = 68
+local PROFILE_GAP = 8
 
 ---------------------------------------------------------------- themes
 
@@ -2535,23 +2542,67 @@ function Window:Toggle(state)
 
     if state then
         -- start from "hidden" values only if the window was fully hidden
-        if not main.Visible then
+        local wasHidden = not main.Visible
+        if wasHidden then
             main.GroupTransparency = 1
             scale.Scale = 0.94
             main.Visible = true
         end
         tween(main, { GroupTransparency = 0 }, 0.2, Enum.EasingStyle.Quad)
         tween(scale, { Scale = 1 }, 0.25, Enum.EasingStyle.Quint)
+        self:_fadeProfile(true, wasHidden)
     else
         tween(main, { GroupTransparency = 1 }, 0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
         tween(scale, { Scale = 0.94 }, 0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+        self:_fadeProfile(false)
         task.delay(0.17, function()
             -- ignore if the window was opened again or destroyed meanwhile
             if self._toggleId == id and not self._destroyed then
                 main.Visible = false
+                if self._profileOutside then
+                    self:_refreshProfile() -- hides the card that sits outside the window
+                end
             end
         end)
     end
+end
+
+-- PC: the window clips everything inside it, so the profile card lives outside (a child of the
+-- gui) and has to fade in / out with the window by itself. mobile: card is a plain Frame, skipped
+function Window:_fadeProfile(show, fromHidden)
+    local p = self._profile
+    if not p or not p:IsA("CanvasGroup") then
+        return
+    end
+    if show then
+        self:_refreshProfile() -- shows the card again if the window was hidden
+        if not self._profileOutside then
+            return
+        end
+        if fromHidden then
+            p.GroupTransparency = 1
+        end
+        self:_placeProfile()
+        tween(p, { GroupTransparency = 0 }, 0.2, Enum.EasingStyle.Quad)
+    elseif self._profileOutside then
+        tween(p, { GroupTransparency = 1 }, 0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+    end
+end
+
+-- PC: keeps the outside profile card centered under the window with a small gap. runs every
+-- frame (same place the shadows follow the window) so it tracks drag, resize and the open anim
+function Window:_placeProfile()
+    local p, main, gui = self._profile, self.Main, self.Gui
+    if not (p and self._profileOutside and main and gui and p.Parent == gui) then
+        return
+    end
+    local gp, mp, ms = gui.AbsolutePosition, main.AbsolutePosition, main.AbsoluteSize
+    local vs = viewportSize(gui)
+    local half = PROFILE_W / 2
+    local x = math.max(math.min(mp.X - gp.X + ms.X / 2, vs.X - half - 4), half + 4)
+    -- right under the window, but never off the bottom of the screen
+    local y = math.min(mp.Y - gp.Y + ms.Y + PROFILE_GAP, vs.Y - PROFILE_CARD_H - 4)
+    p.Position = UDim2.fromOffset(x, y)
 end
 
 function Window:SetTitle(text)
@@ -2662,9 +2713,16 @@ function Window:_refreshProfile()
     local parts = self._profileParts
     local wanted = self._profileWanted ~= false
     local inRail = self._compact or self._short
-    p.Visible = wanted
+    -- PC + desktop layout: the card sits outside the window. mobile and compact are unchanged
+    local outside = (not MOBILE) and not inRail
+    self._profileOutside = outside
+    -- outside the window the card only shows while the window does
+    p.Visible = wanted and (not outside or self.Main.Visible)
+    if not outside and p:IsA("CanvasGroup") then
+        p.GroupTransparency = 0
+    end
 
-    local target = inRail and self._rightRail or self._mid
+    local target = inRail and self._rightRail or (outside and self.Gui or self._mid)
     if p.Parent ~= target then
         p.Parent = target
     end
@@ -2690,9 +2748,16 @@ function Window:_refreshProfile()
         parts.stats.Size = UDim2.new(1, -16, 0, 14)
         parts.stats.Position = UDim2.new(0, 8, 0, 43)
     else
-        p.AnchorPoint = Vector2.new(0.5, 1)
-        p.Position = UDim2.new(0.5, 0, 1, -(FOOTER_H + 2))
-        p.Size = UDim2.new(1, -28, 0, 68)
+        if outside then
+            -- bottom middle, under the window. Position is kept in sync by _placeProfile
+            p.AnchorPoint = Vector2.new(0.5, 0)
+            p.Size = UDim2.fromOffset(PROFILE_W, PROFILE_CARD_H)
+            self:_placeProfile()
+        else
+            p.AnchorPoint = Vector2.new(0.5, 1)
+            p.Position = UDim2.new(0.5, 0, 1, -(FOOTER_H + 2))
+            p.Size = UDim2.new(1, -28, 0, 68)
+        end
 
         parts.avatar.Size = UDim2.fromOffset(38, 38)
         parts.avatar.AnchorPoint = Vector2.new(0, 0.5)
@@ -2714,7 +2779,7 @@ function Window:_refreshProfile()
     self._statsInline = inRail -- one line ("60 fps | 45 ms") in the narrow rail card
 
     -- middle pages only reserve room for the card when it's the big one in the middle
-    local bottom = (wanted and not inRail) and PROFILE_H or (self._short and 0 or FOOTER_H)
+    local bottom = (wanted and not inRail and not outside) and PROFILE_H or (self._short and 0 or FOOTER_H)
     self._pages.Size = UDim2.new(1, 0, 1, -(41 + bottom))
 
     -- right rail list stops above the card
@@ -3589,6 +3654,7 @@ function SAR:CreateWindow(opts)
                 )
             end
         end
+        self:_placeProfile()
     end)
 
     local scale = Instance.new("UIScale")
@@ -3997,7 +4063,7 @@ function SAR:CreateWindow(opts)
     self._pages = pages
 
     -- roblox profile card (name, username, current game, fps/ping)
-    local profile = create(self, "Frame", {
+    local profile = create(self, MOBILE and "Frame" or "CanvasGroup", {
         Name = "Profile",
         AnchorPoint = Vector2.new(0.5, 1),
         Position = UDim2.new(0.5, 0, 1, -(FOOTER_H + 2)),
