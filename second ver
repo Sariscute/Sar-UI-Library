@@ -51,7 +51,7 @@
         DisplayName, Username, UserId, Game   (Game overrides the auto detected game name)
 ]]
 
-local SAR = { Version = "1.5.4", Windows = {} }
+local SAR = { Version = "1.5.5", Windows = {} }
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
